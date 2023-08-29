@@ -137,7 +137,7 @@ remote/
 *err
 *out
 *results*
-*buffer*
+*buffers*
 
 # PhpStorm
 .idea

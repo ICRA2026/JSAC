@@ -48,11 +48,11 @@ def parse_args():
     parser.add_argument('--tqdm', default=True, action='store_true')
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=30000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=24000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--env_steps', default=30000, type=int)
+    parser.add_argument('--init_steps', default=3000, type=int)
+    parser.add_argument('--env_steps', default=24000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
@@ -84,12 +84,12 @@ def parse_args():
     parser.add_argument('--xtick', default=300, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
-    parser.add_argument('--save_model', default=True, action='store_true')
+    parser.add_argument('--save_model', default=False, action='store_true')
     parser.add_argument('--save_model_freq', default=10000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
 
-    parser.add_argument('--buffer_save_path', default='./buffer/', type=str)
+    parser.add_argument('--buffer_save_path', default='', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
 
     args = parser.parse_args()

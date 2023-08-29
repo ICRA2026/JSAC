@@ -201,10 +201,12 @@ class SACRADAgent(BaseAgent):
         """
         super().__init__(args)
 
-        self._replay_buffer = RadReplayBuffer(
+        self._obs_queue = mp.Queue()
+
+        self._replay_buffer = AsyncSMRadReplayBuffer(
             self._image_shape, self._proprioception_shape, self._action_shape,
-            self._replay_buffer_capacity, self._batch_size, 
-            load_path=self._buffer_load_path)
+            self._replay_buffer_capacity, self._batch_size, self._obs_queue,
+            self._init_steps, self._buffer_load_path)
 
         image_shape = self._image_shape
 
@@ -217,8 +219,8 @@ class SACRADAgent(BaseAgent):
         image, proprioception = self._unpack(state)
         next_image, next_proprioception = self._unpack(next_state)
 
-        self._replay_buffer.add(image, proprioception, action, reward,
-                                next_image, next_proprioception, done)
+        self._obs_queue.put((image, proprioception, action, reward,
+                             next_image, next_proprioception, done))
 
     def sample_actions(self, state, deterministic=False):
         if deterministic:
