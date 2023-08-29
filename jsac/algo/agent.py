@@ -240,6 +240,7 @@ class SACRADAgent(BaseAgent):
     def close(self):
         if self._buffer_save_path:
             self._replay_buffer.save(self._buffer_save_path)
+        self._replay_buffer.close()
 
 
 class AsyncSACRADAgent(BaseAgent):
