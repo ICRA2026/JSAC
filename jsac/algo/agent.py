@@ -294,7 +294,7 @@ class AsyncSACRADAgent(BaseAgent):
 
         self._init_models(image_shape, self._proprioception_shape)
 
-        self._actor_queue.put(self._actor.params.unfreeze())
+        self._actor_queue.put(self._actor.params)
 
         self._async_tasks()
 
@@ -372,7 +372,7 @@ class AsyncSACRADAgent(BaseAgent):
             self._update_queue.put(info[0])
 
             if self._update_step % self._actor_update_freq == 0:
-                self._actor_queue.put(self._actor.params.unfreeze())        
+                self._actor_queue.put(self._actor.params)        
 
     def pause_update(self):
         self._pause_update = True

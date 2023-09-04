@@ -89,7 +89,7 @@ def parse_args():
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
 
-    parser.add_argument('--buffer_save_path', default='./buffer/', type=str)
+    parser.add_argument('--buffer_save_path', default='./buffers/', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
 
     args = parser.parse_args()
