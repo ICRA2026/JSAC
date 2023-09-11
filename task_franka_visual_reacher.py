@@ -249,6 +249,7 @@ def main(seed=-1):
     #         image, proprioception, reward, done, info = env.step(action)
 
     agent.close()
+    env.close()
 
     end_time = time.time()
     print(f'\nFinished in {end_time - task_start_time}s')
