@@ -240,7 +240,7 @@ class FrankaPanda_Visual_Reacher_Dense(gym.Env):
 
         self._reset_stats()
         
-        return self._image_history.copy(), obs.copy()
+        return (self._image_history.copy(), obs.copy())
 
     def render(self):
         # get camera image
@@ -442,7 +442,7 @@ class FrankaPanda_Visual_Reacher_Dense(gym.Env):
                 d_angle[i] += 2*np.pi
             elif d_angle[i] > np.pi:
                 d_angle[i] -= 2*np.pi
-        d_angle *= 0.5
+        # d_angle *= 0.5
 
         d_X = pose_action
         
@@ -525,7 +525,7 @@ class FrankaPanda_Visual_Reacher_Dense(gym.Env):
         # if self.cur_step >= self.epi_step:
         #     done = True
 
-        return image, prop, reward, done, info
+        return (image, prop), reward, done, info
 
     def _compute_target_size(self, mask):  
         target_size = np.sum(mask/255.) / mask.size

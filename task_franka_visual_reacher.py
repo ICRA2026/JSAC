@@ -9,6 +9,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere
 from jsac.helpers.logger import Logger
 from jsac.envs.visual_franka_dense_reacher.franka_dense_env import FrankaPanda_Visual_Reacher_Dense
+from jsac.helpers.utils import NormalizedEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
@@ -154,6 +155,7 @@ def main(seed=-1):
         episode_length=args.episode_length_time,
         size_tol=args.size_tol)
 
+    env = NormalizedEnv(env)
     set_seed_everywhere(seed=args.seed)
 
     args.image_shape = env.image_space.shape
@@ -162,7 +164,7 @@ def main(seed=-1):
     args.net_params = config
     args.env_action_space = env.action_space
 
-    image, proprioception = env.reset()
+    (image, proprioception) = env.reset()
 
     print(args.image_shape, image.shape)
     print(args.proprioception_shape, proprioception.shape)
@@ -179,17 +181,13 @@ def main(seed=-1):
     for step in tqdm.tqdm(range(args.start_step, args.env_steps + 1), 
                           smoothing=0.1, disable=not args.tqdm):
         t1 = time.time()
-        
-        if step < args.init_steps:
-            action = env.action_space.sample()
-        else:
-            if update_paused:
-                agent.resume_update()
-                update_paused = False
-            action = agent.sample_actions((image, proprioception))
-
+        # if step < args.init_steps:
+        #     action = env.action_space.sample()
+        #     action = np.tanh(action)
+        # else:
+        action = agent.sample_actions((image, proprioception))
         t2 = time.time()
-        next_image, next_proprioception, reward, done, info = env.step(action)
+        (next_image, next_proprioception), reward, done, info = env.step(action)
         t3 = time.time()
         
 
@@ -205,7 +203,7 @@ def main(seed=-1):
         proprioception = next_proprioception
 
         if done:
-            image, proprioception = env.reset()
+            (image, proprioception) = env.reset()
             done = False
 
             log_data = info['episode']
@@ -216,6 +214,10 @@ def main(seed=-1):
             L.push(log_data)
 
         if step >= args.init_steps:
+            if update_paused:
+                agent.resume_update()
+                update_paused = False
+
             update_infos = agent.update()
             if update_infos is not None:
                 for update_info in update_infos:
