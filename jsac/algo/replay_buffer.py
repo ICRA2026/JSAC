@@ -113,6 +113,7 @@ class RadReplayBuffer():
                      actions=actions, rewards=rewards, masks=dones,
                      next_images=next_images, next_proprioceptions=next_propris)
 
+
     def save(self, save_path):
         tic = time.time()
         print(f'Saving the replay buffer in {save_path}..')
@@ -231,6 +232,8 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
         self._producer_queue = Queue()
         self._consumer_queue = Queue()
 
+        self._start_batch = False
+
         self._batch0_code = 0
         self._batch1_code = 1
         self._save_code = 2
@@ -247,7 +250,11 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
 
         self._last_batch = -1
 
+
     def sample(self):
+        if not self._start_batch:
+            self._start_batch = True
+            self._obs_queue.put('start')
         batch_code = self._producer_queue.get()
 
         if self._last_batch != -1:
@@ -268,6 +275,10 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
             if isinstance(observation, str):
                 if observation == 'close':
                     return
+                if observation == 'start':
+                    self._start_batch = True
+                    continue
+
             with self._lock:
                 self.add(*observation)
 
@@ -444,7 +455,7 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
         self._batch0, self._batch0mem = self._get_sm_batch_using_names(mem_names0)
         self._batch1, self._batch1mem = self._get_sm_batch_using_names(mem_names1)
 
-        while self._steps < self._init_steps:
+        while not self._start_batch:
             time.sleep(0.1)
 
         with self._lock:

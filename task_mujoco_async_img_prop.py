@@ -6,9 +6,9 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
 # os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, NormalizedEnv
 from jsac.helpers.logger import Logger
-from jsac.envs.mujoco_visual_env import MujocoVisualEnv
+from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
@@ -90,7 +90,7 @@ def parse_args():
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
 
-    parser.add_argument('--buffer_save_path', default='./buffer/', type=str)
+    parser.add_argument('--buffer_save_path', default='./buffers/', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
 
     args = parser.parse_args()
@@ -143,6 +143,8 @@ def main(seed=-1):
     env = MujocoVisualEnv(
         args.env_name, True, args.seed, args.stack_frames, args.image_width, 
         args.image_height, img_save_path=img_save_path)
+    
+    env = NormalizedEnv(env)
 
     set_seed_everywhere(seed=args.seed)
 
@@ -152,7 +154,7 @@ def main(seed=-1):
     args.net_params = config
     args.env_action_space = env.action_space
 
-    image, proprioception = env.reset()
+    (image, proprioception) = env.reset()
     if args.sync_mode:
         agent = SACRADAgent(args)
     else:
@@ -165,19 +167,12 @@ def main(seed=-1):
     for step in tqdm.tqdm(range(args.start_step, args.env_steps + 1), 
                           smoothing=0.1, disable=not args.tqdm):
         t1 = time.time()
-        
-        if step < args.init_steps:
-            action = env.action_space.sample()
-        else:
-            if update_paused:
-                agent.resume_update()
-                update_paused = False
-            action = agent.sample_actions((image, proprioception))
+    
+        action = agent.sample_actions((image, proprioception))
 
         t2 = time.time()
-        next_image, next_proprioception, reward, done, info = env.step(action)
+        (next_image, next_proprioception), reward, done, info = env.step(action)
         t3 = time.time()
-        
 
         if not done or 'TimeLimit.truncated' in info:
             mask = 1.0
@@ -191,8 +186,13 @@ def main(seed=-1):
         proprioception = next_proprioception
 
         if done:
-            image, proprioception = env.reset()
+            (image, proprioception) = env.reset()
             done = False
+
+            if update_paused and step >= args.init_steps:
+                agent.resume_update()
+                update_paused = False
+                time.sleep(25)
 
             log_data = info['episode']
             log_data['tag'] = 'train'
@@ -201,12 +201,12 @@ def main(seed=-1):
 
             L.push(log_data)
 
-        if step >= args.init_steps:
+        if not update_paused and step >= args.init_steps:
             update_infos = agent.update()
             if update_infos is not None:
                 for update_info in update_infos:
                     update_info['inference_time'] = (t2 - t1) * 1000
-                    update_info['env_step_time'] = (t3 - t2) * 1000
+                    update_info['env_time'] = (t3 - t2) * 1000
                     update_info['tag'] = 'train'
                     update_info['dump'] = False
                     update_info['step'] = step
@@ -226,13 +226,13 @@ def main(seed=-1):
     L.plot()
     L.close()
 
-    for i in range(2):
-        image, proprioception = env.reset(save_img=True)
-        done=False
-        while not done:
-            action = agent.sample_actions((image, proprioception), 
-                                          deterministic=True)
-            image, proprioception, reward, done, info = env.step(action)
+    # for i in range(2):
+    #     (image, proprioception) = env.reset(save_img=True)
+    #     done=False
+    #     while not done:
+    #         action = agent.sample_actions((image, proprioception), 
+    #                                       deterministic=True)
+    #         image, proprioception, reward, done, info = env.step(action)
 
     agent.close()
 

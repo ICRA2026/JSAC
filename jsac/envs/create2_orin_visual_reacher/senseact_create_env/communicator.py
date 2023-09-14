@@ -9,10 +9,12 @@ import os
 import signal
 
 from threading import Thread
-from multiprocessing import Process, Queue
+from multiprocessing import Process
+
+from jsac.envs.create2_orin_visual_reacher.senseact_create_env.sharedbuffer import SharedBuffer
 
 
-class Communicator(Process):
+class Communicator():
     """An abstract base class for device-specific packet communicators.
 
     Communicators create interface between a physical device and
@@ -45,7 +47,7 @@ class Communicator(Process):
             from the buffer by _actuator_handler
     """
 
-    def __init__(self, use_sensor=True, use_actuator=True):
+    def __init__(self, sensor_args, actuator_args, use_sensor=True, use_actuator=True):
         """Inits communicator class with device-specific sensor and actuation arguments.
 
         Args:
@@ -65,7 +67,7 @@ class Communicator(Process):
             use_actuator: a boolean, indicating whether communicator will transfer
                 actuation data (e.g. video cameras may not have actuations)
         """
-        super(Communicator, self).__init__()
+
         self.use_sensor = use_sensor
         self.use_actuator = use_actuator
         self._parent_pid = os.getpid()
@@ -74,10 +76,10 @@ class Communicator(Process):
         self._sensor_running = False
         self._actuator_running = False
         if self.use_sensor:
-            self.sensor_buffer = Queue()
+            self.sensor_buffer = SharedBuffer(**sensor_args)
 
         if self.use_actuator:
-            self.actuator_buffer = Queue()
+            self.actuator_buffer = SharedBuffer(**actuator_args)
 
     def run(self):
         """Starts sensor and actuator related threads/processes if they exist."""

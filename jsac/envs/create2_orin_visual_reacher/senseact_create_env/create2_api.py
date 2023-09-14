@@ -102,7 +102,6 @@ class Create2SerialInterface(object):
             raise IOError("Error reading from serial port. Received: {}".format(data))
 
         logging.debug("Received: {}".format(data))
-
         return data
 
     def read_all(self):
@@ -475,8 +474,7 @@ class Create2(object):
             stripped_byte_data += packets_byte_data[curr_byte+1:next_byte]
             curr_byte = next_byte
 
-        data = np.frombuffer(stripped_byte_data, dtype=packets_dtype)
-        return data
+        return np.frombuffer(stripped_byte_data, dtype=packets_dtype)
 
     def verify_mode(self):
         """Helper method to check the Create2's current OI mode against expected.

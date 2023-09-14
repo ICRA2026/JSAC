@@ -90,7 +90,6 @@ class BaseAgent:
         return image, proprioception
 
     def _init_models(self, init_image_shape, init_proprioception_shape):
-        
         self._rng, self._critic = init_critic(
             self._rng, self._critic_lr, init_image_shape,
             init_proprioception_shape, self._action_dim, self._net_params,
@@ -116,6 +115,7 @@ class BaseAgent:
         if self._load_model > 0:
             self._load_model_fnc()
 
+            
     def update(self):
         self._update_step += 1
 
@@ -147,6 +147,9 @@ class BaseAgent:
         self._temp = temp
 
         t3 = time.time()
+
+        if self._update_step < 15:
+            print(f'Update {self._update_step} took {t3 - t2}s')
 
         info['sample_time'] = (t2 - t1) * 1000
         info['update_time'] = (t3 - t2) * 1000
@@ -293,7 +296,7 @@ class AsyncSACRADAgent(BaseAgent):
             image_shape = self._rad_image_shape
 
         self._init_models(image_shape, self._proprioception_shape)
-
+        
         self._actor_queue.put(self._actor.params)
 
         self._async_tasks()
@@ -321,6 +324,12 @@ class AsyncSACRADAgent(BaseAgent):
         return np.asarray(actions)
 
     def update(self):
+        # if not self._actor_queue.empty():
+        #     while not self._actor_queue.empty():
+        #         data = self._actor_queue.get()
+        #     with self._actor_lock:
+        #         self._actor_params = data    
+
         if not self._update_queue.empty():
             info = []
             while not self._update_queue.empty():

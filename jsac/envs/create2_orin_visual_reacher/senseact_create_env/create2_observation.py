@@ -101,7 +101,7 @@ class Create2ObservationDim(object):
             self._stored_ranges = self._ranges()
             return self._stored_ranges
 
-    def normalized_handler(self, sensor_dict):
+    def normalized_handler(self, sensor_window):
         """Calculates the observation value and normalize to within -1 and 1.
 
         Args:
@@ -110,7 +110,7 @@ class Create2ObservationDim(object):
         Returns:
             A numpy array of length obs_history, each index a numpy array containing all values.
         """
-        orig_values = self._handler(sensor_dict)
+        orig_values = self._handler(sensor_window)
         normal_values = []
         ranges = self.ranges
         for i, d in enumerate(orig_values):
@@ -144,7 +144,7 @@ class Create2ObservationDim(object):
         """
         return [create2_config.PACKET_INFO[create2_config.PACKET_NAME_TO_ID[self._name]]['range']]
 
-    def _handler(self, sensor_dict):
+    def _handler(self, sensor_window):
         """Handler of the dimension for processing incoming observation.
 
         Args:
@@ -153,7 +153,7 @@ class Create2ObservationDim(object):
         Returns:
             Numpy array containing the post-processed values for each dimension (default just return the full range)
         """
-        return np.array([sensor_dict[self._name]])
+        return np.array([sensor_window[-1][0][self._name]])
 
 
 class Create2LightBumpDim(Create2ObservationDim):
@@ -171,8 +171,8 @@ class Create2LightBumpDim(Create2ObservationDim):
         s_large = 1.0 / np.sqrt(signal_range[1] - self.__beta)
         return [[s_small, s_large]]
 
-    def _handler(self, sensor_dict):
-        s_curr = 1.0 / np.sqrt(max(1.0, sensor_dict[self._name] - self.__beta))
+    def _handler(self, sensor_window):
+        s_curr = 1.0 / np.sqrt(max(1.0, sensor_window[-1][0][self._name] - self.__beta))
         return np.array([s_curr])
 
 
@@ -185,12 +185,12 @@ class Create2InfraredCharacterDim(Create2ObservationDim):
     def _ranges(self):
         return [[0, 1]] * 3 * self._ir_history
 
-    def _handler(self, sensor_dict):
+    def _handler(self, sensor_window):
         output = np.array([0, 0, 0] * self._ir_history)
         index = 0
         for h in range(self._ir_history):
             for p in range(self._ir_window):
-                ir = sensor_dict[self._name]
+                ir = sensor_window[-1 - index - p][0][self._name]
                 output[3 * h:3 * h + 3] += np.array([ir >> 2 & 1, ir & 1, ir >> 3 & 1])
             index += self._ir_window
 
@@ -210,10 +210,10 @@ class Create2BumpsAndWheelDropsDim(Create2ObservationDim):
     def _ranges(self):
         return [[0, 1]] * 2
 
-    def _handler(self, sensor_dict):
+    def _handler(self, sensor_window):
         bw = 0
         for p in range(self.__num_packets):
-            bw |= sensor_dict[self._name]
+            bw |= sensor_window[-1 - p][0][self._name]
         return np.array([bw >> 1 & 1, bw & 1])
 
 
@@ -230,10 +230,10 @@ class Create2ChargingSourcesAvailableDim(Create2ObservationDim):
     def _ranges(self):
         return [[0, sum((self.__num_packets - p) / self.__num_packets for p in range(self.__num_packets))]]
 
-    def _handler(self, sensor_dict):
+    def _handler(self, sensor_window):
         csa = 0
         for p in range(self.__num_packets):
-            csa += (self.__num_packets - p) / self.__num_packets * (sensor_dict['charging sources available'] >> 1)
+            csa += (self.__num_packets - p) / self.__num_packets * (sensor_window[-1 - p][0]['charging sources available'] >> 1)
         return np.array([csa])
 
 
@@ -243,7 +243,7 @@ class Create2PrevActionDim(Create2ObservationDim):
         return list(create2_config.OPCODE_INFO[
                         create2_config.OPCODE_NAME_TO_CODE[self._main_op]]['params'].values())
 
-    def _handler(self, sensor_dict):
+    def _handler(self, sensor_window):
         """
         Returns the last action as observation.
 

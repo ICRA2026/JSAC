@@ -6,20 +6,19 @@
 import time
 import gym
 import logging
-logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 import numpy as np
 import jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_config as create2_config
-from jsac.envs.create2_orin_visual_reacher.senseact_create_env import utils
+from jsac.envs.create2_orin_visual_reacher.senseact_create_env import utils as utils
 
 from multiprocessing import Array, Value
 
-from jsac.envs.create2_orin_visual_reacher.senseact_create_env.rtrl_base_env import RTRLBaseEnv
+from jsac.envs.create2_orin_visual_reacher.senseact_create_env.rtrl_base_env import RTRLBaseEnv 
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_communicator import Create2Communicator
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_observation import Create2ObservationFactory
-
-from jsac.envs.create2_orin_visual_reacher.fast_cam import FastCamera
+from jsac.envs.create2_orin_visual_reacher.senseact_create_env.sharedbuffer import SharedBuffer
 import cv2
 from statistics import mean
+from  jsac.envs.create2_orin_visual_reacher.fast_cam import FastCamera
 
 class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     """Create2 environment for training it drive forward.
@@ -30,7 +29,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         * move all common methods between this class and docking_env to a base class
     """
 
-    def __init__(self, episode_length_time=15, port='/dev/ttyUSB0', obs_history=1, dt=0.015, image_shape=(0, 0, 0),
+    def __init__(self, episode_length_time=30, port='/dev/ttyUSB0', obs_history=1, dt=0.015, image_shape=(0, 0, 0),
                  camera_id=0, min_target_size=0.1, pause_before_reset=0, pause_after_reset=0, **kwargs):
         """Constructor of the environment.
         Args:
@@ -49,10 +48,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         self.pause_before_reset = pause_before_reset
         self.pause_after_reset = pause_after_reset
         self._internal_timing = 0.015
-        self._hsv_mask = ((30, 60, 80), (90, 180, 255))
+        self._hsv_mask = ((34, 55, 60), (90, 160, 255))
         self._min_target_size = min_target_size
         self._min_battery = 800
-        self._max_battery = 1800
+        self._max_battery = 1850
 
         # get the opcode for our main action (only 1 action)
         self._main_op = 'drive_direct'
@@ -86,11 +85,6 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         self._extra_sensor_packets = ['bumps and wheel drops', 'battery charge',
                                       'oi mode', 'distance','charging sources available',
                                       'cliff left', 'cliff front left', 'cliff front right', 'cliff right']
-        
-        packet_names = ['light bump left signal', 'light bump front left signal', 
-        'light bump center left signal', 'light bump center right signal', 
-        'light bump front right signal', 'light bump right signal', ] +  self._extra_sensor_packets
-
         main_sensor_packet_ids = [d.packet_id for d in self._observation_def if d.packet_id is not None]
         extra_sensor_packet_ids = [create2_config.PACKET_NAME_TO_ID[nm] for nm in self._extra_sensor_packets]
 
@@ -111,14 +105,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
             high=np.concatenate([d.highs for d in self._observation_def])
         )
 
-        self._comm_name = 'Create2'
-        
-        self._comms_packet_names = {}
-        self._comms_packet_names[self._comm_name] = packet_names
-
+        # self._comm_name = 'Create2'
         communicator_setups = {}
         buffer_len = int(dt / self._internal_timing + 1)
-        communicator_setups[self._comm_name] = {'Communicator': Create2Communicator,
+        communicator_setups['Create2'] = {'Communicator': Create2Communicator,
                                                  # have to read in this number of packets everytime to support
                                                  # all operations
                                                  'num_sensor_packets': buffer_len,
@@ -126,48 +116,139 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                                                                                  extra_sensor_packet_ids,
                                                             'opcodes': [main_opcode] + extra_opcodes,
                                                             'port': port,
+                                                            'buffer_len': 2 * buffer_len,
                                                            }
                                             }
         
-        self._latest_sensor_dict = None
+        self._comm_name = 'Create2'
+
+        self._roomba_obs_buffer = SharedBuffer(
+                buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN,
+                array_len=len(self._observation_space.low)+2,
+                array_type='d',
+                np_array_type='d',
+                )
+
+        # if image_shape != (0, 0, 0):
+        #     image_stack = int(image_shape[0] // 3)
+        #     communicator_setups['Camera'] = {'Communicator': CameraCommunicator,
+        #                                      'num_sensor_packets': image_stack,
+        #                                      'kwargs': 
+        #                                             {'device_id': camera_id,
+        #                                              'res': (image_shape[2], image_shape[1]) # communicator uses w, h
+        #                                             }
+        #                                     }
+
+        #     self._image_obs_buffer = SharedBuffer(
+        #         buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN,
+        #         array_len=image_shape[0]*image_shape[1]*image_shape[2]+1,
+        #         array_type='B',
+        #         np_array_type='B',
+        #         )
+        #     self._image_reward_buffer = SharedBuffer(
+        #         buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN,
+        #         array_len=1,
+        #         array_type='d',
+        #         np_array_type='d',
+        #         )
 
         self._image_shape = image_shape
         self._image_space = Box(low=0, high=255, shape=self._image_shape)
 
-        if self._image_shape != (0, 0, 0):
+        if image_shape != (0, 0, 0):
             height, width, _ = self._image_shape
             self._cam = FastCamera(res=(width, height), device_id=camera_id, dt=dt)
-        
-        super().__init__(communicator_setups=communicator_setups, dt=dt,
+
+
+
+        super().__init__(communicator_setups=communicator_setups,
+                        action_dim=len(self._action_space.low),
+                        observation_dim=-2, # dont use the base class sensation buffer
+                        dt=dt,
                         **kwargs)
+        
+    def set_min_target_size(self, min_target_size):
+        self._min_target_size = min_target_size
+    
+    def _sensor_to_sensation_(self):
+        # overwrite this to support image
+        for name, comm in self._sensor_comms.items():
+            if comm.sensor_buffer.updated():
+                sensor_window, timestamp_window, index_window = comm.sensor_buffer.read_update(self._num_sensor_packets[name])
+                if name == 'Create2':
+                    s = self._compute_roomba_obs_(sensor_window, timestamp_window, index_window)
+                    self._roomba_obs_buffer.write(s, timestamp=timestamp_window[-1])
+                elif name == 'Camera':
+                    s, r = self._compute_image_obs_(sensor_window, timestamp_window, index_window)
+                    self._image_obs_buffer.write(s, timestamp=timestamp_window[-1])
+                    self._image_reward_buffer.write(r, timestamp=timestamp_window[-1])
+                else:
+                    raise NotImplementedError('Unsupported communicator')
 
     def _read_sensation(self):
         # overwrite this to support image
-
-        sensor_dict = self._get_sensor_dict()
-        r_r, r_d = self._calc_roomba_obs_reward(sensor_dict)
-        roomba_obs = []
-        for d in self._observation_def:
-            res = d.normalized_handler(sensor_dict)
-            roomba_obs.extend(res)
-
+        roomba_obs_r_d, roomba_obs_timestamp, _ = self._roomba_obs_buffer.read_update()
+        roomba_obs, r_r, r_d = roomba_obs_r_d[0][:-2], roomba_obs_r_d[0][-2], roomba_obs_r_d[0][-1]
         image = None
         im_r = 0
         im_d = 0
         if self._image_shape != (0, 0, 0):
             image = self._cam.get_img()
+            
+            cv2.imwrite(f'images/img_@@@{self._cam._img_idx}.jpg', image[:,:,0:3])
+
             self._image_history[:, :, 3:] = self._image_history[:, :, :-3]
             self._image_history[:, :, 0:3] = image
 
             im_r, im_d = self._calc_image_reward(image)
 
-            done = self._check_done(r_d or im_d)
-            return (self._image_history, roomba_obs), r_r+im_r-1,  done
-        
-        return roomba_obs, r_r, r_d
+            # delay = abs(image_timestamp[-1] - roomba_obs_timestamp[-1])
+            # if delay > self._dt:
+            #     print('Warning: image time and proprioception time is different by: {}s.'.format(delay))
+            #     #print
+            # # unflatten image
+            # stacks = int(self._image_shape[0]//3)
+            # height = self._image_shape[1]
+            # width = self._image_shape[2]
+            # image = np.transpose(image.reshape((stacks, height, width, 3)), (0, 3, 1, 2)) # s, c, h, w
+            # image = np.concatenate(image, axis=0) # change to self._image_shape
 
+        #print('r_r:', r_r, "im_r:", im_r)
+        done = self._check_done(r_d or im_d)
+        return (self._image_history.copy(), roomba_obs), r_r+im_r-1,  done
 
-    def _compute_actuation_(self, action):
+    # def _compute_image_obs_(self, sensor_window, timestamp_window, index_window):
+    #     # return np.concatenate((actual_sensation, [reward], [done]))
+    #     reward, done = self._calc_image_reward(sensor_window)
+    #     flatten_image = np.concatenate(sensor_window, axis=0)
+
+    #     return np.concatenate((flatten_image, [done])).astype('uint8'), reward
+
+    def _compute_roomba_obs_(self, sensor_window, timestamp_window, index_window):
+        """The required _computer_sensation_ interface.
+        Args:
+            name:               the name of communicator the sense is from
+            sensor_window:      an array of size num_sensor_packets each containing 1 complete observation packets
+            timestamp_window:   array of timestamp corresponds to the sensor_window
+            index_window:       array of count corresponds to the sensor_window
+        Returns:
+            A numpy array with [:-2] the sensation, [-2] the reward, [-1] the done flag
+        """
+        # construct the actual sensation
+
+        actual_obs = []
+        for d in self._observation_def:
+            res = d.normalized_handler(sensor_window)
+            actual_obs.extend(res)
+
+        # accumulate the rotation information
+        # self._total_rotation += sensor_window[-1][0]['angle']
+
+        reward, done = self._calc_roomba_obs_reward(sensor_window)
+
+        return np.concatenate((actual_obs, [reward], [done]))
+
+    def _compute_actuation_(self, action, timestamp, index):
         """The required _compute_actuator_ interface.
         The side effect is to write the output to self._actuation_packet_[name] with [opcode, *action]
         Args:
@@ -181,14 +262,12 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
             return
 
         # pass int only action
-        action = action.astype(int)
+
+        action = action.astype('i')
+
         self._actuation_packet_['Create2'] = np.concatenate(
             ([create2_config.OPCODE_NAME_TO_CODE[self._main_op]], action))
         np.copyto(self._prev_action_, action)
-
-
-    def _sensor_to_sensation_(self):
-        pass
 
     def _reset_(self):
         """The required _reset_ interface.
@@ -205,25 +284,25 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         for d in self._observation_def:
             d.reset()
 
+        # wait for create2 to startup properly if just started (ie. wait to actually start receiving observation)
+        while not self._sensor_comms['Create2'].sensor_buffer.updated():
+            time.sleep(0.01)
+
         # wait for camera to startup properly
         _ = self._cam.get_img()
-
-        # wait for create2 to startup properly if just started (ie. wait to actually start receiving observation)
-        sensor_dict = self._get_sensor_dict()
-
         self._image_history = np.zeros(shape=self._image_shape, dtype=np.uint8)
 
-        print('current charge:', sensor_dict['battery charge'])
-
-        if sensor_dict['battery charge'] <= self._min_battery:
+        sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
+        print('current charge:', sensor_window[-1][0]['battery charge'])
+        if sensor_window[-1][0]['battery charge'] <= self._min_battery:
             print("Waiting for Create2 to be docked.")
-            if sensor_dict['charging sources available'] <= 0:
+            if sensor_window[-1][0]['charging sources available'] <= 0:
                 self._write_opcode('drive_direct', 0, 0)
                 time.sleep(0.75)
                 self._write_opcode('seek_dock')
                 time.sleep(10)
             self._wait_until_charged()
-            sensor_dict = self._get_sensor_dict()
+            sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
 
         # Always switch to SAFE mode to run an episode, so that Create2 will switch to PASSIVE on the
         # charger.  If the create2 is in any other mode on the charger, we will not be able to detect
@@ -233,7 +312,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         time.sleep(0.1)
 
         # after charging/docked, try to drive away from the dock if still on it
-        if sensor_dict['charging sources available'] > 0:
+        if sensor_window[-1][0]['charging sources available'] > 0:
             logging.info("Undocking the Create2.")
             self._write_opcode('drive_direct', -250, -250)
             time.sleep(0.75)
@@ -242,7 +321,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         # rotate and drive backward 
         logging.info("Moving Create2 into position.")
-        target_values = [-300, -300]
+        target_values = [300, 300]
         move_time_1 = np.random.uniform(low=1, high=1.5)
         move_time_2 = np.random.uniform(low=0.3, high=0.6)
         rotate_time_1 = np.random.uniform(low=0.25, high=0.75)
@@ -250,7 +329,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         direction = np.random.choice((1, -1))
         
         # rotate
-        self._write_opcode('drive_direct', *(300*direction, -300*direction))
+        self._write_opcode('drive_direct', *(-300*direction, 300*direction))
         time.sleep(rotate_time_1)
         self._write_opcode('drive', 0, 0)
         time.sleep(0.1)
@@ -262,13 +341,13 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         time.sleep(0.1)
 
         # rotate
-        self._write_opcode('drive_direct', *(300*direction, -300*direction))
+        self._write_opcode('drive_direct', *(-300*direction, 300*direction))
         time.sleep(rotate_time_2)
         self._write_opcode('drive', 0, 0)
         time.sleep(0.1)
         
         # back
-        self._write_opcode('drive_direct', *[300, 300])
+        self._write_opcode('drive_direct', *[-300, -300])
         time.sleep(move_time_2)
         self._write_opcode('drive', 0, 0)
         time.sleep(0.1)
@@ -282,8 +361,8 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         # make sure in SAFE mode in case the random drive caused switch to PASSIVE, or
         # create2 stuck somewhere and require human reset (don't want an episode to start
         # until fixed, otherwise we get a whole bunch of one step episodes)
-        sensor_dict = self._get_sensor_dict()
-        while sensor_dict['oi mode'] != 2:
+        sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
+        while sensor_window[-1][0]['oi mode'] != 2:
             logging.warning("Create2 not in SAFE mode, reattempting... (might require human intervention).")
             self._write_opcode('full')
             time.sleep(0.2)
@@ -294,7 +373,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
             self._write_opcode('safe')
             time.sleep(0.2)
 
-            sensor_dict = self._get_sensor_dict()
+            sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
 
         # N.B: pause_after_reset should be greater than zero only for demo purposes
         time.sleep(self.pause_after_reset)
@@ -303,25 +382,6 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         time.sleep(2 * self._internal_timing)
 
         print("Reset completed.")
-
-    def _get_sensor_dict(self):
-        while self._sensor_comms[self._comm_name].sensor_buffer.empty() and self._latest_sensor_dict == None:
-            time.sleep(0.0001)
-
-        if not self._sensor_comms[self._comm_name].sensor_buffer.empty(): 
-            sensor_window = self._sensor_comms[self._comm_name].sensor_buffer.get()
-            while not self._sensor_comms[self._comm_name].sensor_buffer.empty():
-                sensor_window = self._sensor_comms[self._comm_name].sensor_buffer.get()
-            
-            sensor_dict = {}
-            for idx, packet_name in enumerate(self._comms_packet_names[self._comm_name]):
-                sensor_dict[packet_name] = sensor_window[-1][idx]
-            
-            self._latest_sensor_dict = sensor_dict
-            return self._latest_sensor_dict
-        
-        return self._latest_sensor_dict
-        
 
     def _check_done(self, env_done):
         """The required _check_done_ interface.
@@ -335,7 +395,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         # return self._episode_step_.value >= self._episode_length_step or env_done
         return env_done
         
-    def _calc_roomba_obs_reward(self, obs):
+    def _calc_roomba_obs_reward(self, sensor_window):
         """Helper to calculate reward.
         Args:
             sensor_window: the sensor_window from _compute_sensation_
@@ -345,20 +405,20 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         
         bw = 0
         for p in range(int(self._dt / self._internal_timing)):
-            bw |= obs['bumps and wheel drops']
+            bw |= sensor_window[-1 - p][0]['bumps and wheel drops']
         
         cl = 0
         for p in range(int(self._dt / self._internal_timing)):
-            cl += obs['cliff left']
-            cl += obs['cliff front left']
-            cl += obs['cliff front right']
-            cl += obs['cliff right']
+            cl += sensor_window[-1 - p][0]['cliff left']
+            cl += sensor_window[-1 - p][0]['cliff front left']
+            cl += sensor_window[-1 - p][0]['cliff front right']
+            cl += sensor_window[-1 - p][0]['cliff right']
         
         reward = 0
 
-        charging_sources_available = obs['charging sources available']
+        charging_sources_available = sensor_window[-1][0]['charging sources available']
 
-        oi_mode = obs['oi mode']
+        oi_mode = sensor_window[-1][0]['oi mode']
         if oi_mode == 1 and charging_sources_available == 0 and cl == 0:
             self._write_opcode('safe')
 
@@ -372,8 +432,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
     def _calc_image_reward(self, image):
         reward = 0.0
-        done = 0
-
+        done = 0  
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, np.array(self._hsv_mask[0]), np.array(self._hsv_mask[1]))
         output = cv2.bitwise_and(image, image, mask=mask)
@@ -396,30 +455,24 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         """
         # write the command directly to actuator_buffer to avoid the limitation that the opcode
         # is not part of the action dimension
-        self._actuator_comms[self._comm_name].actuator_buffer.put(
+        self._actuator_comms['Create2'].actuator_buffer.write(
             np.concatenate(([create2_config.OPCODE_NAME_TO_CODE[opcode_name]], np.array(args).astype('i'))))
 
     def _wait_until_charged(self):
         """Waits until Create 2 is sufficiently charged."""
-        sensor_dict = self._get_sensor_dict()
-        logging.info("Need to charge .. {}.".format(sensor_dict['battery charge']))
-        while sensor_dict['battery charge'] < self._max_battery:
+        sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
+        logging.info("Need to charge .. {}.".format(sensor_window[-1]['battery charge']))
+        while sensor_window[-1][0]['battery charge'] < self._max_battery:
             # move it out of the dock to avoid the weird non-responsive sleep mode (the non-responsive sleep
             # mode can happen on any mode while on the dock, but only detectable when in PASSIVE mode)
             self._write_opcode('safe')
             time.sleep(0.1)
             self._write_opcode('seek_dock')
             time.sleep(0.1)
-            logging.info("Create2 charging with current charge at {}.".format(sensor_dict['battery charge']))
+            logging.info("Create2 charging with current charge at {}.".format(sensor_window[-1]['battery charge']))
             time.sleep(10)
-            print('current charge:', sensor_dict['battery charge'])
-            sensor_dict = self._get_sensor_dict()
-
-    # def _get_indices_from_packet_names(self, names):
-    #     indices={}
-    #     for idx, name in enumerate(names):
-    #         indices[name] = idx
-    #     return indices
+            print('current charge:', sensor_window[-1][0]['battery charge'])
+            sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
 
     # ======== rllab compatible gym codes =========
 
@@ -442,20 +495,96 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     def close(self):
         self._cam.close()
         super().close()
+
+# def random_policy_done_2_done_length():
+#     seed = 1
+#     np.random.seed(seed)
+#     total_dones = 50
+#     task = "create2 visual reacher"
+#     episode_length_time = 30.0
+#     dt = 0.045
+#     env = Create2VisualReacherEnv(episode_length_time=episode_length_time, dt=dt, image_shape=(9, 120, 160), camera_id=0, min_target_size=0.2)
+#     env.start()
+
+#     # Experiment
+#     timeout = int(episode_length_time/dt)
+#     done_2_done_lens = []
+#     steps = 0
+#     while len(done_2_done_lens) < total_dones:
+#         env.reset()
+#         epi_steps = 0
+#         done = 0
+#         done_2_done_steps = 0
+#         resets = 0
+#         while not done:
+#             action = env.action_space.sample()
+
+#             # step in the environment
+#             _, _, done, _ = env.step(action)
+
+#             # Log
+#             steps += 1
+#             epi_steps += 1
+#             done_2_done_steps += 1
+
+#             # Termination
+#             if epi_steps == timeout:
+#                 resets += 1
+#                 env.reset()
+#                 epi_steps = 0
+
+#         done_2_done_lens.append(done_2_done_steps)
+ 
+#         print('Episode: {}, done_2_done steps: {},resets: {}, total steps: {}'.format(len(done_2_done_lens), done_2_done_steps, resets, steps))
+
+
+#     with open(task + "_random_stat.txt") as out_file:
+#         for length in done_2_done_lens:
+#             out_file.write(str(length)+'\n')
+
+#         out_file.write(f"\nMean: {mean(done_2_done_lens)}")
         
-if __name__ == '__main__':
-    env = Create2VisualReacherEnv(episode_length_time=15, dt=0.015, image_shape=(90, 160, 9), camera_id=0, min_target_size=0.1)
-    env.start()
+# if __name__ == '__main__':
+#     # env = Create2VisualReacherEnv(episode_length_time=60, dt=0.045, image_shape=(9, 120, 160), camera_id=0, min_target_size=0.1)
+#     # env.start()
 
-    env.reset()
-    for i in range(10):
-        a = env.action_space.sample()
-        (image, obs), _, done, _ = env.step(a)
-
-        print(f'i: {i}, obs: {obs}, im_shape: {image.shape}, action: {a}')
+#     # env.reset()
+#     # for i in range(10000):
+#     #     a = env.action_space.sample()
+#     #     (image, _), _, done, _ = env.step([0,0])
         
-        cv2.imwrite(f'img_{i}.jpg', image[:,:,0:3])
+#     #     image = np.transpose(image, [1, 2, 0])
+#     #     cv2.imshow('', image[:,:,0:3])
+#     #     cv2.waitKey
+#     #     print(i+1, done)
+#     random_policy_done_2_done_length()
 
-    env.close()
 
-    # sudo chmod a+rw /dev/ttyUSB0
+# if __name__ == '__main__':
+#     env = Create2VisualReacherEnv(episode_length_time=15, dt=0.03, image_shape=(270, 480, 9), camera_id=0, min_target_size=0.1)
+#     env.start()
+
+#     from queue import Queue
+
+#     q = Queue()
+
+#     env.reset()
+#     for i in range(50):
+#         a = [100, -100]
+
+#         (image, obs), reward, done, _ = env.step(a)
+
+#         cv2.imwrite(f'images/img_{i}a.jpg', image[:,:,0:3])
+#         cv2.imwrite(f'images/img_{i}b.jpg', image[:,:,3:6])
+#         cv2.imwrite(f'images/img_{i}c.jpg', image[:,:,6:9])
+
+#         q.put(image)
+
+#     env.close()
+
+#     i = 0
+#     while not q.empty():
+#         image = q.get()
+
+#         i += 1
+        

@@ -107,7 +107,7 @@ class MLP(nn.Module):
 
 
 LOG_STD_MIN = -10.0
-LOG_STD_MAX = 2.0
+LOG_STD_MAX = 10.0
 
 
 def gaussian_logprob(noise, log_std):
@@ -136,7 +136,7 @@ class ActorModel(nn.Module):
     net_params: dict 
     spatial_softmax: bool = True
     mode: str = MODE.IMG_PROP
-    final_fc_init_scale: float = 1.0
+    final_fc_init_scale: float = 0.0
 
     @nn.compact
     def __call__(self, images, proprioceptions, deterministic=False, key=None):

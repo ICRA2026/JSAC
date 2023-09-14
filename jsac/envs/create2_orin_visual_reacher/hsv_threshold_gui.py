@@ -38,8 +38,8 @@ phMin = psMin = pvMin = phMax = psMax = pvMax = 0
 
 # Output Image to display
 if useCamera:
-    cam = FastCamera(res=(1280, 720), dt=0.015)
-    waitTime = 15
+    cam = FastCamera(res=(1280, 720), dt=0.03)
+    waitTime = 30
 else:
     img = cv2.imread(sys.argv[1])
     output = img
@@ -61,7 +61,7 @@ while(1):
     sMax = cv2.getTrackbarPos('SMax','image')
     vMax = cv2.getTrackbarPos('VMax','image')
 
-    # Set minimum and max HSV values to display
+    # Set minimum and max HSV values to display15
     lower = np.array([hMin, sMin, vMin])
     upper = np.array([hMax, sMax, vMax])
 

@@ -8,9 +8,10 @@ import logging
 import os
 import numpy as np
 from threading import Thread
-from multiprocessing import Process, Value, Array, Queue
+from multiprocessing import Process, Value, Array
 
-from jsac.envs.create2_orin_visual_reacher.senseact_create_env import utils
+import jsac.envs.create2_orin_visual_reacher.senseact_create_env.utils as utils
+from jsac.envs.create2_orin_visual_reacher.senseact_create_env.sharedbuffer import SharedBuffer
 
 
 class RTRLBaseEnv(object):
@@ -27,10 +28,12 @@ class RTRLBaseEnv(object):
 
     def __init__(self,
                  communicator_setups,
+                 action_dim,
+                 observation_dim,
                  run_mode='multithread',
                  dt=.1,
-                 dt_tol=1e-5,
-                 sleep_time=0.0001,
+                 dt_tol=3e-3,
+                 sleep_time=1e-5,
                  busy_loop=False,
                  random_state=None,
                  **kwargs
@@ -74,8 +77,6 @@ class RTRLBaseEnv(object):
         self._sleep_time = sleep_time
         self._busy_loop = busy_loop
 
-        self.total_timesteps = 0
-
         # create random object based on passed random_state tuple
         self._rand_obj_ = np.random.RandomState()
         if random_state is None:
@@ -91,11 +92,21 @@ class RTRLBaseEnv(object):
         self._reset_flag = Value('i', 0)
 
 
-        self._action_buffer = Queue()
+        self._action_buffer = SharedBuffer(
+            buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN,
+            array_len=action_dim,
+            array_type='d',
+            np_array_type='d',
+        )
 
         # Contains the observation vector, with the last element being the _reward_
-        self._sensation_buffer = Queue()
-        
+        self._sensation_buffer = SharedBuffer(
+            buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN,
+            array_len=observation_dim + 2,
+            array_type='d',
+            np_array_type='d',
+        )
+
         # A dictionary of dictionaries, one for each communicator that is required
         self._communicator_setups = communicator_setups
 
@@ -117,13 +128,18 @@ class RTRLBaseEnv(object):
         # from each communicator
         self._num_sensor_packets = {}
 
+        self._comm_processes = {}
+
         # Construct the communicators without starting
         for name, setup in communicator_setups.items():
             # Initialize communicator with the given parameters
             comm = setup['Communicator'](**setup['kwargs'])
 
             if comm.use_actuator:
-                self._actuation_packet_[name] = None
+                self._actuation_packet_[name] = np.zeros(
+                    shape=comm.actuator_buffer.array_len,
+                    dtype=comm.actuator_buffer.np_array_type,
+                )
                 self._actuator_comms[name] = comm
 
             if comm.use_sensor:
@@ -135,7 +151,6 @@ class RTRLBaseEnv(object):
 
             self._all_comms[name] = comm
 
-
         self._running = False
 
     # ===== Main interfaces =====
@@ -145,8 +160,19 @@ class RTRLBaseEnv(object):
         self._running = True
 
         # Start the communicator process
-        for comm in self._all_comms.values():
-            comm.start()
+        for name, comm in self._all_comms.items():
+            sensor_buffer_state = None 
+            actuator_buffer_state = None
+
+            if comm.use_sensor:
+                sensor_buffer_state = comm.sensor_buffer.get_state()
+            if comm.use_actuator:
+                actuator_buffer_state = comm.actuator_buffer.get_state()
+
+            process = Process(target=comm.run, args=(sensor_buffer_state, 
+                                                     actuator_buffer_state))
+            self._comm_processes[name] = process
+            process.start()
 
         time.sleep(0.5)  # let the communicator buffer have some packets
 
@@ -188,7 +214,8 @@ class RTRLBaseEnv(object):
             while time.time() - self._new_obs_time < self._dt:
                 continue
         else:
-            time.sleep(max(0, self._dt - time_used - self._dt_tol))
+            while time.time() - self._new_obs_time < self._dt:
+                time.sleep(self._sleep_time )
 
         self._new_obs_time = time.time()
         next_obs, reward, done = self.sense()
@@ -220,28 +247,6 @@ class RTRLBaseEnv(object):
         except Exception as e:
             self.close()
             raise e
-        
-    def _reset_stats(self):
-        self.reward_sum = 0.0
-        self.episode_length = 0
-        self.start_time = time.time()
-
-    def _monitor(self, reward, done, info):
-        self.reward_sum += reward
-        self.episode_length += 1
-        self.total_timesteps += 1
-        info['total'] = {'timesteps': self.total_timesteps}
-
-        if done:
-            info['episode'] = {}
-            info['episode']['return'] = self.reward_sum
-            info['episode']['length'] = self.episode_length
-            info['episode']['duration'] = time.time() - self.start_time
-
-            if hasattr(self, 'get_normalized_score'):
-                info['episode']['return'] = self.get_normalized_score(
-                    info['episode']['return']) * 100.0
-        return info
 
     def step(self, action):
         """Optional step function for OpenAI Gym compatibility.
@@ -252,8 +257,7 @@ class RTRLBaseEnv(object):
         self.act(action)
         # Wait for one time-step
         next_obs, reward, done = self.sense_wait()
-        info = self._monitor(reward, done, {})
-        return next_obs, reward, done, info
+        return next_obs, reward, done, {}
 
     def reset(self, blocking=True):
         """Resets the environment based on the 'run_mode'.
@@ -261,7 +265,6 @@ class RTRLBaseEnv(object):
         Returns:
             A numpy array with observation data.
         """
-        self._reset_stats()
         if self._run_mode == 'singlethread':
             return self._reset_singlethread()
         else:
@@ -270,8 +273,8 @@ class RTRLBaseEnv(object):
     def close(self):
         """Closes all manager threads and communicator processes."""
         for name, comm in self._all_comms.items():
-            comm.terminate()
-            comm.join()
+            self._comm_processes[name].terminate()
+            self._comm_processes[name].join()
 
         self._running = False
 
@@ -304,7 +307,7 @@ class RTRLBaseEnv(object):
         """
         return env_done
 
-    def _compute_sensation_(self, name, sensor_window):
+    def _compute_sensation_(self, name, sensor_window, timestamp_window, index_window):
         """Converts robot sensory data into observation data.
 
         This method processes sensory data, creates an observation vector,
@@ -339,9 +342,11 @@ class RTRLBaseEnv(object):
         Calls `_compute_sensation_` for each updated `sensor_buffer`, which in turn
         updates the shared `_sensation_buffer`.
         """
-
-        raise NotImplementedError
-    
+        for name, comm in self._sensor_comms.items():
+            if comm.sensor_buffer.updated():
+                sensor_window, timestamp_window, index_window = comm.sensor_buffer.read_update(self._num_sensor_packets[name])
+                s = self._compute_sensation_(name, sensor_window, timestamp_window, index_window)
+                self._sensation_buffer.write(s)
 
     def _action_to_actuator_(self):
         """Converts action to robot actuation command.
@@ -355,16 +360,15 @@ class RTRLBaseEnv(object):
         sending any of them so that there is minimal delay between writes
         to different communicators.
         """
-        if not self._action_buffer.empty():
-            action = self._action_buffer.get()
-            self._compute_actuation_(action)
+        if self._action_buffer.updated():
+            action, timestamp, index = self._action_buffer.read_update()
+            self._compute_actuation_(action[0], timestamp, index)
             self._write_actuation_()
 
     def _write_actuation_(self):
         """Sends `actuation_packet`s to all connected actuation communicators."""
         for name, comm in self._actuator_comms.items():
-            if self._actuation_packet_[name] is not None:
-                comm.actuator_buffer.put(self._actuation_packet_[name])
+            comm.actuator_buffer.write(self._actuation_packet_[name])
 
     def _read_sensation(self):
         """Converts sensation to observation vector.
@@ -375,9 +379,12 @@ class RTRLBaseEnv(object):
         In multithread or multiprocess run mode, `sense` is defined to be
         this method.
 
+        Returns:
+            A tuple (observation, reward, done)
         """
-
-        raise NotImplementedError
+        sensation, _, _ = self._sensation_buffer.read_update()
+        done = self._check_done(sensation[0][-1])
+        return sensation[0][:-2], sensation[0][-2], done
 
     def _write_action(self, action):
         """Writes action to the action buffer.
@@ -392,7 +399,7 @@ class RTRLBaseEnv(object):
             Exception: if any of the communicator or internal helper
             processes crashed.
         """
-        self._action_buffer.put(action)
+        self._action_buffer.write(action)
 
         # Only allow action if the environment is still running; we are checking after
         # writing the action because we want any delays to be between act and sense.
@@ -400,7 +407,7 @@ class RTRLBaseEnv(object):
             raise Exception("Attempted to act on a non-running environment.")
 
         # check if any communicator has stopped or the polling loop has died
-        if any(not comm.is_alive() for comm in self._all_comms.values()) or \
+        if any(not comm_process.is_alive() for comm_process in self._comm_processes.values()) or \
            (hasattr(self, '_polling_loop') and not self._polling_loop.is_alive()):
             logging.error("One of the environment subprocess has died, closing all processes.")
             self.close()
@@ -483,10 +490,9 @@ class RTRLBaseEnv(object):
                 # The `reset` function in the main thread may block on this flag
                 self._reset_flag.value = 0
 
-            # self._sensor_to_sensation_()
+            self._sensor_to_sensation_()
             self._action_to_actuator_()
             start = time.time()
-
             if self._busy_loop:
                 while time.time() - start < self._sleep_time:
                     continue

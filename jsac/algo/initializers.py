@@ -42,7 +42,7 @@ def init_actor(rng, critic, learning_rate, init_image_shape,
                init_proprioception_shape, action_dim, net_params, 
                spatial_softmax=True, use_critic_encoder=True, 
                mode=MODE.IMG_PROP):
-    
+
     model = ActorModel(action_dim=action_dim, net_params=net_params,
                        spatial_softmax=spatial_softmax, mode=mode)
 
@@ -71,7 +71,7 @@ def init_actor(rng, critic, learning_rate, init_image_shape,
 
     else:
         tx = optax.adam(learning_rate=learning_rate)
-
+    
     return rng, TrainState.create(apply_fn=model.apply, params=params, tx=tx)
 
 

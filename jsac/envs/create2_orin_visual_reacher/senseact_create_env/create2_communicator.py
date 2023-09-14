@@ -9,29 +9,39 @@ import numpy as np
 
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_api import Create2
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.communicator import Communicator
+from jsac.envs.create2_orin_visual_reacher.senseact_create_env.sharedbuffer import SharedBuffer
+
 
 class Create2Communicator(Communicator):
     """The class implements communicator for Create2 device."""
-    def __init__(self, sensor_packet_ids, opcodes, port='/dev/ttyUSB0', 
-                 baudrate=115200):
+    def __init__(self, sensor_packet_ids, opcodes, port='/dev/ttyUSB0', baudrate=115200,
+                 buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN):
         """Inits the communicator object with device-specific parameters.
 
-        Args:actuator_buffer
+        Args:
             sensor_packet_ids: a list of integer packet ids we are interested in
             opcodes: a list of integer opcodes of the action we will be taking
             port: a string specifying the port of the serial connection
             baudrate: an integer specifying the baudrate to connect at
         """
-        self._create2 = Create2()
         self._sensor_packet_ids = sensor_packet_ids
+        self._opcodes = opcodes
         self._port = port
         self._baudrate = baudrate
+        self._buffer_len = buffer_len
 
+        self._create2 = Create2()
         # gather info for total sensor packets size
         sensor_packet_dtypes = []
         for packet_id in sensor_packet_ids:
             sensor_packet_dtypes.extend(self._create2.get_packet_dtype(packet_id).descr)
         final_sensor_dtype = np.dtype(sensor_packet_dtypes)
+
+        sensor_args = {'buffer_len': buffer_len,
+                       'array_len': final_sensor_dtype.itemsize,
+                       'array_type': 'b',
+                       'np_array_type': final_sensor_dtype,
+                       }
 
         # gather info for max actuator command parameters size
         # TODO support the song command with variable parameter list when implemented
@@ -39,12 +49,25 @@ class Create2Communicator(Communicator):
         for opcode in opcodes:
             max_params = max(max_params, len(self._create2.get_op_params(opcode)))
 
-        super(Create2Communicator, self).__init__(use_sensor=True, use_actuator=True)
+        actuator_args = {'buffer_len': buffer_len,
+                         'array_len': 1 + max_params,     # add one for opcode itself
+                         'array_type': 'i',
+                         'np_array_type': 'i',
+                         }
 
-    def run(self):
+        super(Create2Communicator, self).__init__(use_sensor=True, use_actuator=True,
+                                                  sensor_args=sensor_args, actuator_args=actuator_args)
+
+    def run(self, sensor_buffer_state, actuator_buffer_state):
         """Method called by Python when the communicator process is started."""
         # connect in subprocess since IO can't be shared across processes on all OS
         self._connect()
+
+        if self.use_sensor:
+            self.sensor_buffer.set_state(sensor_buffer_state)
+
+        if self.use_actuator:
+            self.actuator_buffer.set_state(actuator_buffer_state)
 
         # entering main communicator process loop
         super(Create2Communicator, self).run()
@@ -70,6 +93,7 @@ class Create2Communicator(Communicator):
         # to prevent the deep non-responsive sleep from happening.
         try:
             data = self._create2.get_stream_packets()
+            # print(f'Create2Communicator-_sensor_handler-data: {data}')
         except IOError:
             # Keep trying to reconnect until succeed or when we are stopping the communicator.
             # This can takes as many as a dozen tries or as little as one try.  As of now
@@ -84,14 +108,14 @@ class Create2Communicator(Communicator):
                     pass
             return
 
-        self.sensor_buffer.put(data)
+        self.sensor_buffer.write(data)
 
     def _actuator_handler(self):
         """Implements the main actuator handler for the communicator."""
-        if not self.actuator_buffer.empty():
-            recent_actuation = self.actuator_buffer.get()
-            opcode = recent_actuation[0]
-            args = recent_actuation[1:]
+        if self.actuator_buffer.updated():
+            recent_actuation, _, _ = self.actuator_buffer.read_update()
+            opcode = recent_actuation[0][0]
+            args = recent_actuation[0][1:]
 
             # just let the action evaporate into the ether if we are reconnecting; we
             # don't want to hold onto actions that are too old

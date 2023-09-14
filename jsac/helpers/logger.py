@@ -106,7 +106,7 @@ class MetersGroup(object):
         if wandb_log:
             wandb.log(data)
         self._dump_to_file(data)
-        # self._dump_to_console(data, prefix)
+        self._dump_to_console(data, prefix)
         self._meters.clear()
 
 
@@ -189,7 +189,11 @@ class Logger(object):
                 if data == 'close':
                     return
                 if data == 'plot':
-                    self._plot_returns()
+                    try:
+                        self._plot_returns()
+                    except:
+                        pass
+
                     continue
 
             step = data['step']

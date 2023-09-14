@@ -90,7 +90,7 @@ class MujocoVisualEnv(gym.Wrapper):
         info = self.monitor(reward, done, info)
 
         if self._use_img:
-            return self._latest_image, ob, reward, done, info
+            return (self._latest_image, ob), reward, done, info
         else:
             return ob, reward, done, info
 
@@ -114,7 +114,7 @@ class MujocoVisualEnv(gym.Wrapper):
         self._reset_stats()
         
         if self._use_img:
-            return self._latest_image, ob
+            return (self._latest_image, ob)
         else:
             return ob
 
@@ -152,18 +152,18 @@ class MujocoVisualEnv(gym.Wrapper):
         super().close()
         del self
 
-def test_env():
-    env = MujocoVisualEnv('InvertedDoublePendulum-v2', True)
-    img, prop = env.reset(save_img=True)
-    print(f'0\tprop:{prop}')
-    for i in range(15):
-        action = env.action_space.sample()
-        img, prop, reward, done, info = env.step(action)
-        print(f'{i+1}\tprop:{prop}\treward:{reward}')
+# def test_env():
+#     env = MujocoVisualEnv('InvertedDoublePendulum-v2', True)
+#     img, prop = env.reset(save_img=True)
+#     print(f'0\tprop:{prop}')
+#     for i in range(15):
+#         action = env.action_space.sample()
+#         img, prop, reward, done, info = env.step(action)
+#         print(f'{i+1}\tprop:{prop}\treward:{reward}')
 
-        if done:
-            img, prop = env.reset(save_img=True)
-            print(f'0\tprop:{prop}')
+#         if done:
+#             img, prop = env.reset(save_img=True)
+#             print(f'0\tprop:{prop}')
 
 
 # test_env()
