@@ -14,15 +14,20 @@ import time
 FORMAT_CONFIG = {
     'rl': {
         'train': [
-            ('episode', 'E', 'int'), ('step', 'S', 'int'),
-            ('duration', 'D', 'time'), ('episode_reward', 'R', 'float'),
-            ('batch_reward', 'BR', 'float'), ('actor_loss', 'ALOSS', 'float'),
+            ('episode', 'E', 'int'), 
+            ('step', 'S', 'int'),
+            ('episode_steps', 'ES', 'int'),
+            ('duration', 'D', 'float'), 
+            ('return', 'R', 'float'),
+            ('actor_loss', 'AL', 'float'),
             ('entropy', 'ENT', 'float'),
-            ('critic_loss', 'CLOSS', 'float'), ('num_updates', 'NUM', 'int'),
-            ('sample_time', 'ST', 'float'), ('update_time', 'UT', 'float'),
-            ('inference_time', 'IT', 'float'), ('env_step_time', 'ET', 'float')
+            ('critic_loss', 'CL', 'float'), 
+            ('num_updates', 'NU', 'int'),
+            ('update_time', 'UT', 'float'),
+            ('action_sample_time', 'AST', 'float'), 
+            ('env_time', 'ET', 'float')
         ],
-        'eval': [('step', 'S', 'int'), ('episode_reward', 'ER', 'float')]
+        'eval': [('step', 'S', 'int'), ('return', 'ER', 'float')]
     }
 }
 
@@ -167,7 +172,7 @@ class Logger(object):
             self._use_wandb = False
 
         self._returns=[]
-        self._lengths=[]
+        self._episode_steps=[]
 
         log_path = os.path.join(self._log_dir, 'train.log')
         if os.path.exists(log_path):
@@ -175,7 +180,7 @@ class Logger(object):
                 for line in ret_file.readlines():
                     dict = eval(line)
                     self._returns.append(dict['return'])
-                    self._lengths.append(dict['length'])
+                    self._episode_steps.append(dict['episode_steps'])
 
         self._plot_path = self._log_dir + 'learning_curve.png'
 
@@ -203,8 +208,8 @@ class Logger(object):
                     continue
                 elif k == 'return':
                     self._returns.append(v)
-                elif k == 'length':
-                    self._lengths.append(v)
+                elif k == 'episode_steps':
+                    self._episode_steps.append(v)
 
                 if isinstance(v, jaxlib.xla_extension.ArrayImpl):
                         v = v.item()
@@ -233,7 +238,7 @@ class Logger(object):
         self._eval_mg.dump(step, 'eval', self._sw, self._use_wandb)
 
     def _plot_returns(self):
-        show_learning_curve(self._plot_path, self._returns, self._lengths, 
+        show_learning_curve(self._plot_path, self._returns, self._episode_steps, 
                             self._xtick)
 
     def close(self):

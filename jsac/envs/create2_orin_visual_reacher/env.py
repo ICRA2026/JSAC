@@ -30,7 +30,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     """
 
     def __init__(self, episode_length_time=30, port='/dev/ttyUSB0', obs_history=1, dt=0.015, image_shape=(0, 0, 0),
-                 camera_id=0, min_target_size=0.1, pause_before_reset=0, pause_after_reset=0, **kwargs):
+                 camera_id=0, min_target_size=0.1, pause_before_reset=0, pause_after_reset=0, dense_reward=False, **kwargs):
         """Constructor of the environment.
         Args:
             episode_length_time: A float duration of an episode defined in seconds
@@ -52,6 +52,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         self._min_target_size = min_target_size
         self._min_battery = 800
         self._max_battery = 1850
+        self._dense_reward = dense_reward
 
         # get the opcode for our main action (only 1 action)
         self._main_op = 'drive_direct'
@@ -159,8 +160,6 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
             height, width, _ = self._image_shape
             self._cam = FastCamera(res=(width, height), device_id=camera_id, dt=dt)
 
-
-
         super().__init__(communicator_setups=communicator_setups,
                         action_dim=len(self._action_space.low),
                         observation_dim=-2, # dont use the base class sensation buffer
@@ -215,7 +214,11 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         #print('r_r:', r_r, "im_r:", im_r)
         done = self._check_done(r_d or im_d)
-        return (self._image_history.copy(), roomba_obs), r_r+im_r-1,  done
+
+        reward = r_r+im_r-1
+        if self._dense_reward:
+            reward = im_r
+        return (self._image_history.copy(), roomba_obs), reward,  done
 
     # def _compute_image_obs_(self, sensor_window, timestamp_window, index_window):
     #     # return np.concatenate((actual_sensation, [reward], [done]))
@@ -444,6 +447,9 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         #print('target size:', target_size)
         if target_size >= self._min_target_size:
             done = 1
+
+        if self._dense_reward:
+            reward = target_size
 
         return reward, done
 

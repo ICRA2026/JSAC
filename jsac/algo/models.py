@@ -148,7 +148,7 @@ class ActorModel(nn.Module):
         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
 
         mu = nn.Dense(self.action_dim, 
-                      kernel_init=default_init(self.final_fc_init_scale)
+                      kernel_init=default_init(jnp.sqrt(2.0)/10.0)
                       )(outputs)
         
         if deterministic:

@@ -121,7 +121,6 @@ class BaseAgent:
 
         t1 = time.time()
         batch = self._replay_buffer.sample()
-        t2 = time.time()
 
         self._rng, actor, critic, critic_target, temp, info = update_jit(
             self._rng,
@@ -146,14 +145,13 @@ class BaseAgent:
         self._critic_target = critic_target
         self._temp = temp
 
-        t3 = time.time()
+        t2 = time.time()
 
-        if self._update_step < 15:
-            print(f'Update {self._update_step} took {t3 - t2}s')
+        # if self._update_step < 15:
+        #     print(f'Update {self._update_step} took {t3 - t2}s')
 
-        info['sample_time'] = (t2 - t1) * 1000
-        info['update_time'] = (t3 - t2) * 1000
-        info['update_step'] = self._update_step
+        info['update_time'] = (t1 - t2) * 1000
+        info['num_updates'] = self._update_step
 
         return [info]
 

@@ -16,8 +16,6 @@ class MujocoVisualEnv(gym.Wrapper):
         self._use_img = use_img
         self._mode = mode
         self.seed(seed)
-        self._reset_stats()
-        self.total_timesteps = 0
 
         self.save_img=False
         self.save_img_itr=0
@@ -39,7 +37,6 @@ class MujocoVisualEnv(gym.Wrapper):
         # remember to reset 
         self._latest_image = None
         self._reset = False
-        self._epi_step = 0
 
     @property
     def image_space(self):
@@ -48,28 +45,6 @@ class MujocoVisualEnv(gym.Wrapper):
     @property
     def proprioception_space(self):
         return self.env.observation_space
-    
-    def _reset_stats(self):
-        self.reward_sum = 0.0
-        self.episode_length = 0
-        self.start_time = time.time()
-
-    def monitor(self, reward, done, info):
-        self.reward_sum += reward
-        self.episode_length += 1
-        self.total_timesteps += 1
-        info['total'] = {'timesteps': self.total_timesteps}
-
-        if done:
-            info['episode'] = {}
-            info['episode']['return'] = self.reward_sum
-            info['episode']['length'] = self.episode_length
-            info['episode']['duration'] = time.time() - self.start_time
-
-            if hasattr(self, 'get_normalized_score'):
-                info['episode']['return'] = self.get_normalized_score(
-                    info['episode']['return']) * 100.0
-        return info
 
 
     def step(self, a):
@@ -77,7 +52,6 @@ class MujocoVisualEnv(gym.Wrapper):
         ob, reward, done, info = self.env.step(a)
 
         ob = self._get_ob(ob)
-        self._epi_step += 1
 
         if self._use_img:
             new_img = self._get_new_img()
@@ -86,8 +60,6 @@ class MujocoVisualEnv(gym.Wrapper):
 
         if done:
             self._reset = False
-
-        info = self.monitor(reward, done, info)
 
         if self._use_img:
             return (self._latest_image, ob), reward, done, info
@@ -110,8 +82,6 @@ class MujocoVisualEnv(gym.Wrapper):
             self._latest_image = np.concatenate(self._image_buffer, axis=self._channel_axis)
         
         self._reset = True
-        self._epi_step = 0
-        self._reset_stats()
         
         if self._use_img:
             return (self._latest_image, ob)

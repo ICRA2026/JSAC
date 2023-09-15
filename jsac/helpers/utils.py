@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import collections
 from gym.core import Env
+import time
+import cv2
 
 
 class MODE:
@@ -97,6 +99,13 @@ class NormalizedEnv(Env):
             normalize_reward=False,
             obs_alpha=0.001,
             reward_alpha=0.001,
+            reward_penalty=0,
+            steps_penalty=0,
+            save_images = False,
+            chw_image = False,
+            images_path = None,
+            save_data = False,
+            data_path = None
     ):
         self._wrapped_env = env
         self._scale_reward = scale_reward
@@ -109,6 +118,16 @@ class NormalizedEnv(Env):
         self._reward_mean = 0.
         self._reward_var = 1.
         self._spec = EnvSpec(env.spec, self.observation_space, self.action_space)
+        self._reward_penalty = reward_penalty
+        self._steps_penalty = steps_penalty
+        self._episode = 0
+        self._total_step = 0
+        self._save_images = save_images
+        self._chw_image = chw_image
+        self._images_path = images_path
+        self._save_data = save_data 
+        self._data_path = data_path
+
 
     def _update_obs_estimate(self, obs):
         flat_obs = self.wrapped_env.observation_space.flatten(obs)
@@ -127,9 +146,89 @@ class NormalizedEnv(Env):
     def _apply_normalize_reward(self, reward):
         self._update_reward_estimate(reward)
         return reward / (np.sqrt(self._reward_var) + 1e-8)
+    
+    def set_save_images(self, save_images, images_path=None):
+        self._save_images = save_images
+        if images_path:
+            self._images_path = images_path
+    
+    def set_save_propri_action(self, save_propri_action, propri_action_path=None):
+        self._save_propri_action = save_propri_action
+        if propri_action_path:
+            self._propri_action_path = propri_action_path
 
-    def reset(self):
+    def _write_data(self, obs=None, other_data=None):
+        if isinstance(obs, tuple):
+            image, propri = obs
+        elif self._save_images:
+            image = obs
+        elif self._save_data:
+            propri = obs
+
+        if self._save_images:
+            if self._chw_image:
+                image = np.transpose(image, (1,2,0))
+            channels = image.shape[-1]
+            stacks = channels//3
+            if stacks > 1:
+                images = []
+                for i in range(stacks):
+                    images.append(image[:,:,i*3:(i+1)*3])
+                image = np.vstack(images)
+                
+            dir = f'{self._images_path}Episode_{self._episode}/'
+            if not os.path.exists(dir):
+                make_dir(dir)
+            file_path = f'{dir}step_{self.episode_steps}.jpg'
+            cv2.imwrite(file_path, image)
+        
+        if self._save_data:
+            if other_data is not None:
+                other_data['Proprioception'] = propri
+                data = other_data
+            else:
+                data = {'Proprioception': propri}
+
+            with open(self._data_path, 'a') as f:
+                f.write(f'Episode: {self._episode}, episode_step: {self.episode_steps}, total_step: {self._total_step}\n')
+                
+                for key, value in data.items():
+                    f.write(f'{key}: {value}\n')
+                
+                f.write('\n')
+
+    def _update_stats(self, apply_penalty=False):
+        if apply_penalty:
+            self.reward_sum += self._reward_penalty
+            self.episode_steps += self._steps_penalty
+            return
+        self.reward_sum = 0
+        self.episode_steps = 0
+        self.start_time = time.time()
+
+    def _monitor(self, reward, done, info):
+        self.reward_sum += reward
+        self.episode_steps += 1
+        self._total_step += 1 
+
+        if done:
+            self._episode += 1
+            info['episode'] = self._episode
+            info['step'] = self._total_step
+            info['episode_steps'] = self.episode_steps
+            info['duration'] = time.time() - self.start_time
+            info['return'] = self.reward_sum
+
+        return info
+
+    def reset(self, apply_penalty=False):
         ret = self._wrapped_env.reset()
+        
+        self._update_stats(apply_penalty=apply_penalty)
+
+        if self._save_images or self._save_propri_action:
+            self._write_data(ret)
+        
         if self._normalize_obs:
             return self._apply_normalize_obs(ret)
         else:
@@ -148,6 +247,13 @@ class NormalizedEnv(Env):
             next_obs = self._apply_normalize_obs(next_obs)
         if self._normalize_reward:
             reward = self._apply_normalize_reward(reward)
+
+        info = self._monitor(reward, done, info)
+
+        if self._save_images or self._save_propri_action:
+            other_data = {'Reward': reward, 'Action': scaled_action}
+            self._write_data(next_obs, other_data)
+
         return Step(next_obs, reward * self._scale_reward, done, info)
         # return next_obs, reward * self._scale_reward, done, info
 

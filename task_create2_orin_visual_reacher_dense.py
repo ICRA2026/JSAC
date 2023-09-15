@@ -6,9 +6,10 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
 # os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, NormalizedEnv
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere
 from jsac.helpers.logger import Logger
-from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
+from jsac.envs.create2_orin_visual_reacher.env import Create2VisualReacherEnv
+from jsac.helpers.utils import NormalizedEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
@@ -17,6 +18,7 @@ import jaxlib
 import argparse
 import shutil
 import multiprocessing as mp
+import numpy as np
 
 
 config = {
@@ -36,23 +38,30 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='reacher_async_img_prop', type=str)
+    parser.add_argument('--name', default='create2_orin_visual_reacher_dense', type=str)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-    parser.add_argument('--env_name', default='Reacher-v2', type=str)
-    parser.add_argument('--image_height', default=120, type=int)
-    parser.add_argument('--image_width', default=120, type=int)
+    parser.add_argument('--image_height', default=90, type=int)
+    parser.add_argument('--image_width', default=160, type=int)
     parser.add_argument('--stack_frames', default=3, type=int)
+
+    parser.add_argument('--camera_id', default=0, type=int)
+    parser.add_argument('--episode_length_time', default=10.0, type=float)
+    parser.add_argument('--dt', default=0.03, type=float)
+    parser.add_argument('--min_target_size', default=0.99, type=float)
+    parser.add_argument('--pause_before_reset', default=0, type=float)
+    parser.add_argument('--pause_after_reset', default=0, type=float)
+
     parser.add_argument('--tqdm', default=True, action='store_true')
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=30000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--env_steps', default=30000, type=int)
+    parser.add_argument('--init_steps', default=3000, type=int)
+    parser.add_argument('--env_steps', default=100000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
@@ -82,11 +91,11 @@ def parse_args():
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=300, type=int)
+    parser.add_argument('--xtick', default=1000, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_model_freq', default=10000, type=int)
+    parser.add_argument('--save_model_freq', default=20000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
 
@@ -98,6 +107,16 @@ def parse_args():
 
 def main(seed=-1):
     args = parse_args()
+
+    # curriculum = [
+    #     (30000, 0.10),
+    #     (45000, 0.15),
+    #     (60000, 0.20),
+    #     (70000, 0.25),
+    #     (75000, 0.30),
+    #     (args.env_steps + 1000, 0.30)
+    # ]
+    # curriculum_idx = 0
 
     assert args.mode == MODE.IMG_PROP
     assert args.sync_mode == False
@@ -139,25 +158,33 @@ def main(seed=-1):
         L = Logger(args.work_dir, args.xtick, args.save_tensorboard, 
                    args.save_wandb)
 
-    img_save_path = f'{args.work_dir}/imgs' 
-    env = MujocoVisualEnv(
-        args.env_name, True, args.seed, args.stack_frames, args.image_width, 
-        args.image_height, img_save_path=img_save_path)
+    image_shape = (args.image_height, args.image_width, 3*args.stack_frames)
+
+    env = Create2VisualReacherEnv(
+        episode_length_time=args.episode_length_time, 
+        dt=args.dt,
+        image_shape=image_shape,
+        camera_id=args.camera_id,
+        min_target_size=args.min_target_size,
+        pause_before_reset=args.pause_before_reset,
+        pause_after_reset=args.pause_after_reset,
+        dense_reward=True
+        )
     
-    env = NormalizedEnv(env, save_images=True, 
-                        images_path=args.work_dir+'images/',
-                        save_data=True,
-                        data_path=args.work_dir+'data.txt')
-
+    env = NormalizedEnv(env)
     set_seed_everywhere(seed=args.seed)
+    env.start()
 
+    episode_length_step = int(args.episode_length_time / args.dt)
     args.image_shape = env.image_space.shape
-    args.proprioception_shape = env.proprioception_space.shape
+    args.proprioception_shape = env.observation_space.shape
     args.action_shape = env.action_space.shape
     args.net_params = config
     args.env_action_space = env.action_space
 
-    (image, proprioception) = env.reset()
+    # print(args.image_shape, image.shape)
+    # print(args.proprioception_shape, proprioception.shape)
+
     if args.sync_mode:
         agent = SACRADAgent(args)
     else:
@@ -167,19 +194,32 @@ def main(seed=-1):
 
     update_paused = True
 
-    for step in range(args.start_step, args.env_steps + 1):
-        t1 = time.time()
-    
-        action = agent.sample_actions((image, proprioception))
+    (image, proprioception) = env.reset()
 
+    ret = 0
+    episode = 0
+    step = 0
+    epi_steps = 0
+
+    for step in tqdm.tqdm(range(args.start_step, args.env_steps + 1), 
+                          smoothing=0.1, disable=not args.tqdm):
+        t1 = time.time()
+        # if step < args.init_steps:
+        #     action = env.action_space.sample()
+        #     action = np.tanh(action)
+        # else:
+        action = agent.sample_actions((image, proprioception))
         t2 = time.time()
         (next_image, next_proprioception), reward, done, info = env.step(action)
         t3 = time.time()
 
-        if not done or 'TimeLimit.truncated' in info:
+        ret += reward
+        epi_steps += 1
+        
+        mask = 0
+        if epi_steps == episode_length_step:
+            done = True
             mask = 1.0
-        else:
-            mask = 0.0
 
         agent.add((image, proprioception), action, reward, 
                   (next_image, next_proprioception),  mask)
@@ -188,33 +228,39 @@ def main(seed=-1):
         proprioception = next_proprioception
 
         if done:
+            log_data = {}
+            log_data['tag'] = 'train'
+            log_data['dump'] = True
+            log_data['episode'] = episode
+            log_data['step'] = step
+            log_data['return'] = ret
+            log_data['length'] = epi_steps
+
+            ret = 0
+            epi_steps = 0
+            episode += 1
+
+            L.push(log_data)
+
             (image, proprioception) = env.reset()
             done = False
 
             if update_paused and step >= args.init_steps:
                 agent.resume_update()
                 update_paused = False
+                time.sleep(25)
 
-            info['tag'] = 'train'
-            info['dump'] = True
-
-            L.push(info)
-
-        if not update_paused and step >= args.init_steps:
+        if not update_paused:
             update_infos = agent.update()
             if update_infos is not None:
                 for update_info in update_infos:
-                    update_info['action_sample_time'] = (t2 - t1) * 1000
-                    update_info['env_time'] = (t3 - t2) * 1000
+                    update_info['inference_time'] = (t2 - t1) * 1000
+                    update_info['env_step_time'] = (t3 - t2) * 1000
                     update_info['tag'] = 'train'
                     update_info['dump'] = False
                     update_info['step'] = step
 
                     L.push(update_info)
-
-        if step > 200:
-            env.set_save_images(False)
-            env.set_save_propri_action(False)
 
         if step % args.xtick == 0:
             L.plot()
@@ -229,15 +275,9 @@ def main(seed=-1):
     L.plot()
     L.close()
 
-    # for i in range(2):
-    #     (image, proprioception) = env.reset(save_img=True)
-    #     done=False
-    #     while not done:
-    #         action = agent.sample_actions((image, proprioception), 
-    #                                       deterministic=True)
-    #         image, proprioception, reward, done, info = env.step(action)
 
     agent.close()
+    env.close()
 
     end_time = time.time()
     print(f'\nFinished in {end_time - task_start_time}s')
@@ -245,14 +285,10 @@ def main(seed=-1):
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
-
-    # for i in range(15):
-    #     main(i)
-
     main()
 
 
-
+# sudo chmod a+rw /dev/ttyUSB0
 
 
     
