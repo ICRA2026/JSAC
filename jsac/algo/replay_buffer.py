@@ -456,6 +456,15 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
         self._batch1, self._batch1mem = self._get_sm_batch_using_names(mem_names1)
 
         while not self._start_batch:
+            # Checking if the replay buffer process 
+            # needs to be close while waiting
+            if not self._consumer_queue.empty():
+                code = int(self._consumer_queue.get())
+                if code == self._close_code:
+                    self._close()
+                    return
+                elif code == self._save_code:
+                    self._consumer_queue.get()
             time.sleep(0.1)
 
         with self._lock:
@@ -483,9 +492,12 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
                 save_path = self._consumer_queue.get()
                 super().save(save_path)
             elif code == self._close_code:
-                self._obs_queue.put('close')
                 break
 
+        self._close()
+
+    def _close(self):
+        self._obs_queue.put('close')
         print('Closng replay buffer shared memory..')
         with self._lock:
             for mem in self._batch0mem:
@@ -494,6 +506,7 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
             for mem in self._batch1mem:
                 if mem is not None:
                     mem.close()
+
         
     def save(self, save_path):
         self._consumer_queue.put(self._save_code)

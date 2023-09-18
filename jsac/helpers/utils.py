@@ -90,79 +90,123 @@ class EnvSpec():
 
 Step = collections.namedtuple("Step", ["observation", "reward", "done", "info"])
 
-class NormalizedEnv(Env):
+
+class WrappedEnv(Env):
     def __init__(
             self,
             env,
-            scale_reward=1.,
-            normalize_obs=False,
-            normalize_reward=False,
-            obs_alpha=0.001,
-            reward_alpha=0.001,
+            episode_max_steps=0,
+            is_min_time=False,
             reward_penalty=0,
             steps_penalty=0,
+            mode='',
             save_images = False,
             chw_image = False,
-            images_path = None,
+            images_save_path = None,
             save_data = False,
-            data_path = None
-    ):
+            data_save_path = None):
+        
         self._wrapped_env = env
-        self._scale_reward = scale_reward
-        self._normalize_obs = normalize_obs
-        self._normalize_reward = normalize_reward
-        self._obs_alpha = obs_alpha
-        self._obs_mean = np.zeros(env.observation_space.shape)
-        self._obs_var = np.ones(env.observation_space.shape)
-        self._reward_alpha = reward_alpha
-        self._reward_mean = 0.
-        self._reward_var = 1.
-        self._spec = EnvSpec(env.spec, self.observation_space, self.action_space)
+        self._episode_max_steps = episode_max_steps
+        self._is_min_time = is_min_time
         self._reward_penalty = reward_penalty
         self._steps_penalty = steps_penalty
-        self._episode = 0
-        self._total_step = 0
+        self._mode = mode
         self._save_images = save_images
         self._chw_image = chw_image
-        self._images_path = images_path
-        self._save_data = save_data 
-        self._data_path = data_path
+        self._images_save_path = images_save_path
+        self._save_data = save_data
+        self._data_save_path = data_save_path
+        self._spec = EnvSpec(env.spec, self.observation_space, self.action_space)
 
+        self._total_steps  = 0
+        self._episode = 0
 
-    def _update_obs_estimate(self, obs):
-        flat_obs = self.wrapped_env.observation_space.flatten(obs)
-        self._obs_mean = (1 - self._obs_alpha) * self._obs_mean + self._obs_alpha * flat_obs
-        self._obs_var = (1 - self._obs_alpha) * self._obs_var + self._obs_alpha * np.square(flat_obs - self._obs_mean)
+    def _reset_stats(self):
+        self._reward_sum = 0
+        self._episode_steps = 0
+        if self._is_min_time:
+            self._sub_episode = 0
+            self._sub_episode_steps=0
+        self._start_time = time.time()
 
-    def _update_reward_estimate(self, reward):
-        self._reward_mean = (1 - self._reward_alpha) * self._reward_mean + self._reward_alpha * reward
-        self._reward_var = (1 - self._reward_alpha) * self._reward_var + \
-                           self._reward_alpha * np.square(reward - self._reward_mean)
+    def _monitor(self, reward, done, info):
+        self._reward_sum += reward
+        self._episode_steps += 1
+        self._total_steps += 1 
 
-    def _apply_normalize_obs(self, obs):
-        self._update_obs_estimate(obs)
-        return (obs - self._obs_mean) / (np.sqrt(self._obs_var) + 1e-8)
+        if not self._is_min_time and \
+            self._episode_steps == self._episode_max_steps:
+            done = True 
 
-    def _apply_normalize_reward(self, reward):
-        self._update_reward_estimate(reward)
-        return reward / (np.sqrt(self._reward_var) + 1e-8)
-    
-    def set_save_images(self, save_images, images_path=None):
+        if done:
+            self._episode += 1
+            info['episode'] = self._episode
+            info['step'] = self._total_steps
+            info['episode_steps'] = self._episode_steps
+            info['duration'] = time.time() - self._start_time
+            info['return'] = self._reward_sum
+            return done, info
+        
+        if self._is_min_time:
+            self._sub_episode_steps += 1
+            if self._sub_episode_steps == self._episode_max_steps:
+                self._reward_sum += self._reward_penalty
+                self._total_steps += self._steps_penalty
+                self._episode_steps += self._steps_penalty
+                self._sub_episode += 1
+                info['reached_episode_max_steps'] = True
+                info['episode'] = self._episode
+                info['sub_episode'] = self._sub_episode
+                info['sub_episode_steps '] = self._sub_episode_steps 
+                self._sub_episode_steps = 0
+                return done, info
+        
+        return done, info
+
+    def reset(self, reset_stats=True):
+        ret = self._wrapped_env.reset()
+        if reset_stats:
+            self._reset_stats()
+        if self._save_images or self._save_data:
+            self._write_data(obs=ret)
+        return ret
+
+    def step(self, action):
+        # rescale the action
+        lb = self._wrapped_env.action_space.low
+        ub = self._wrapped_env.action_space.high
+        scaled_action = lb + (action + 1.) * 0.5 * (ub - lb)
+        scaled_action = np.clip(scaled_action, lb, ub)
+
+        wrapped_step = self._wrapped_env.step(scaled_action)
+        next_obs, reward, done, info = wrapped_step
+        done, info = self._monitor(reward, done, info)
+        if self._save_images or self._save_data:
+            other_data = {'Reward': reward, 'Action': scaled_action}
+            self._write_data(next_obs, other_data)
+
+        return Step(next_obs, reward, done, info)
+
+    def __str__(self):
+        return "RealTimeEnv: %s" % self._wrapped_env
+
+    def set_save_images(self, save_images, images_save_path=None):
         self._save_images = save_images
-        if images_path:
-            self._images_path = images_path
+        if images_save_path:
+            self._images_save_path = images_save_path
     
-    def set_save_propri_action(self, save_propri_action, propri_action_path=None):
-        self._save_propri_action = save_propri_action
-        if propri_action_path:
-            self._propri_action_path = propri_action_path
+    def set_save_data(self, save_data, data_save_path=None):
+        self._save_data= save_data
+        if data_save_path:
+            self._data_save_path = data_save_path
 
     def _write_data(self, obs=None, other_data=None):
-        if isinstance(obs, tuple):
-            image, propri = obs
-        elif self._save_images:
+        if self._mode == MODE.IMG_PROP:
+            (image, propri) = obs
+        elif self._mode == MODE.IMG:
             image = obs
-        elif self._save_data:
+        elif self._mode == MODE.PROP:
             propri = obs
 
         if self._save_images:
@@ -176,10 +220,10 @@ class NormalizedEnv(Env):
                     images.append(image[:,:,i*3:(i+1)*3])
                 image = np.vstack(images)
                 
-            dir = f'{self._images_path}Episode_{self._episode}/'
+            dir = f'{self._images_save_path}Episode_{self._episode}/'
             if not os.path.exists(dir):
                 make_dir(dir)
-            file_path = f'{dir}step_{self.episode_steps}.jpg'
+            file_path = f'{dir}step_{self._episode_steps}.jpg'
             cv2.imwrite(file_path, image)
         
         if self._save_data:
@@ -189,76 +233,18 @@ class NormalizedEnv(Env):
             else:
                 data = {'Proprioception': propri}
 
-            with open(self._data_path, 'a') as f:
-                f.write(f'Episode: {self._episode}, episode_step: {self.episode_steps}, total_step: {self._total_step}\n')
+            with open(self._data_save_path, 'a') as f:
+                f.write(f'Episode: {self._episode}, episode_step: ' + 
+                        f'{self._episode_steps}, total_step: {self._total_steps}\n')
                 
                 for key, value in data.items():
                     f.write(f'{key}: {value}\n')
                 
                 f.write('\n')
 
-    def _update_stats(self, apply_penalty=False):
-        if apply_penalty:
-            self.reward_sum += self._reward_penalty
-            self.episode_steps += self._steps_penalty
-            return
-        self.reward_sum = 0
-        self.episode_steps = 0
-        self.start_time = time.time()
-
-    def _monitor(self, reward, done, info):
-        self.reward_sum += reward
-        self.episode_steps += 1
-        self._total_step += 1 
-
-        if done:
-            self._episode += 1
-            info['episode'] = self._episode
-            info['step'] = self._total_step
-            info['episode_steps'] = self.episode_steps
-            info['duration'] = time.time() - self.start_time
-            info['return'] = self.reward_sum
-
-        return info
-
-    def reset(self, apply_penalty=False):
-        ret = self._wrapped_env.reset()
-        
-        self._update_stats(apply_penalty=apply_penalty)
-
-        if self._save_images or self._save_propri_action:
-            self._write_data(ret)
-        
-        if self._normalize_obs:
-            return self._apply_normalize_obs(ret)
-        else:
-            return ret
-
-    def step(self, action):
-        # rescale the action
-        lb = self._wrapped_env.action_space.low
-        ub = self._wrapped_env.action_space.high
-        scaled_action = lb + (action + 1.) * 0.5 * (ub - lb)
-        scaled_action = np.clip(scaled_action, lb, ub)
-
-        wrapped_step = self._wrapped_env.step(scaled_action)
-        next_obs, reward, done, info = wrapped_step
-        if self._normalize_obs:
-            next_obs = self._apply_normalize_obs(next_obs)
-        if self._normalize_reward:
-            reward = self._apply_normalize_reward(reward)
-
-        info = self._monitor(reward, done, info)
-
-        if self._save_images or self._save_propri_action:
-            other_data = {'Reward': reward, 'Action': scaled_action}
-            self._write_data(next_obs, other_data)
-
-        return Step(next_obs, reward * self._scale_reward, done, info)
-        # return next_obs, reward * self._scale_reward, done, info
-
-    def __str__(self):
-        return "Normalized: %s" % self._wrapped_env
+    @property
+    def total_steps(self):
+        return self._total_steps
 
     @property
     def wrapped_env(self):
@@ -268,7 +254,7 @@ class NormalizedEnv(Env):
         return self._wrapped_env.start()
 
     def close(self):
-        super(NormalizedEnv, self).close()
+        super(WrappedEnv, self).close()
         return self._wrapped_env.close()
 
     @property
@@ -278,16 +264,6 @@ class NormalizedEnv(Env):
     @property
     def observation_space(self):
         return self._wrapped_env.observation_space
-
-    def render(self, *args, **kwargs):
-        try:
-            return self._wrapped_env.render(*args, **kwargs)
-        except TypeError:
-            pass
-            # return self._wrapped_env.render()
-
-    def log_diagnostics(self, paths, *args, **kwargs):
-        self._wrapped_env.log_diagnostics(paths, *args, **kwargs)
 
     @property
     def horizon(self):
@@ -315,3 +291,4 @@ class NormalizedEnv(Env):
             return hooked
         else:
             return orig_attr
+        

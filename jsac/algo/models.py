@@ -136,7 +136,7 @@ class ActorModel(nn.Module):
     net_params: dict 
     spatial_softmax: bool = True
     mode: str = MODE.IMG_PROP
-    final_fc_init_scale: float = 0.0
+    # final_fc_init_scale: float = 0.0
 
     @nn.compact
     def __call__(self, images, proprioceptions, deterministic=False, key=None):
@@ -148,15 +148,13 @@ class ActorModel(nn.Module):
         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
 
         mu = nn.Dense(self.action_dim, 
-                      kernel_init=default_init(jnp.sqrt(2.0)/10.0)
-                      )(outputs)
+                      kernel_init=default_init(jnp.sqrt(2)/10.0))(outputs)
         
         if deterministic:
             return nn.tanh(mu)
 
         log_std = nn.Dense(self.action_dim, 
-                           kernel_init=default_init(self.final_fc_init_scale)
-                           )(outputs)
+                           kernel_init=default_init(0.0))(outputs)
 
         log_std = nn.tanh(log_std)
         log_std = LOG_STD_MIN + 0.5 * (

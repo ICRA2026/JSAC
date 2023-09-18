@@ -19,6 +19,7 @@ from jsac.envs.create2_orin_visual_reacher.senseact_create_env.sharedbuffer impo
 import cv2
 from statistics import mean
 from  jsac.envs.create2_orin_visual_reacher.fast_cam import FastCamera
+from collections import deque
 
 class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     """Create2 environment for training it drive forward.
@@ -158,7 +159,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         if image_shape != (0, 0, 0):
             height, width, _ = self._image_shape
-            self._cam = FastCamera(res=(width, height), device_id=camera_id, dt=dt)
+            self._cam = FastCamera(res=(width, height), device_id=camera_id)
 
         super().__init__(communicator_setups=communicator_setups,
                         action_dim=len(self._action_space.low),
@@ -177,10 +178,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                 if name == 'Create2':
                     s = self._compute_roomba_obs_(sensor_window, timestamp_window, index_window)
                     self._roomba_obs_buffer.write(s, timestamp=timestamp_window[-1])
-                elif name == 'Camera':
-                    s, r = self._compute_image_obs_(sensor_window, timestamp_window, index_window)
-                    self._image_obs_buffer.write(s, timestamp=timestamp_window[-1])
-                    self._image_reward_buffer.write(r, timestamp=timestamp_window[-1])
+                # elif name == 'Camera':
+                #     s, r = self._compute_image_obs_(sensor_window, timestamp_window, index_window)
+                #     self._image_obs_buffer.write(s, timestamp=timestamp_window[-1])
+                #     self._image_reward_buffer.write(r, timestamp=timestamp_window[-1])
                 else:
                     raise NotImplementedError('Unsupported communicator')
 
@@ -193,11 +194,9 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         im_d = 0
         if self._image_shape != (0, 0, 0):
             image = self._cam.get_img()
-            
-            cv2.imwrite(f'images/img_@@@{self._cam._img_idx}.jpg', image[:,:,0:3])
 
-            self._image_history[:, :, 3:] = self._image_history[:, :, :-3]
-            self._image_history[:, :, 0:3] = image
+            self._image_history.append(image)
+            latest_image = np.concatenate(self._image_history, axis=-1)
 
             im_r, im_d = self._calc_image_reward(image)
 
@@ -218,7 +217,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         reward = r_r+im_r-1
         if self._dense_reward:
             reward = im_r
-        return (self._image_history.copy(), roomba_obs), reward,  done
+        return (latest_image, roomba_obs), reward,  done
 
     # def _compute_image_obs_(self, sensor_window, timestamp_window, index_window):
     #     # return np.concatenate((actual_sensation, [reward], [done]))
@@ -292,8 +291,11 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
             time.sleep(0.01)
 
         # wait for camera to startup properly
-        _ = self._cam.get_img()
-        self._image_history = np.zeros(shape=self._image_shape, dtype=np.uint8)
+        img = self._cam.get_img()
+        image_stack = self._image_shape[-1] // 3
+        self._image_history = deque([], maxlen=image_stack)
+        for _ in range(image_stack):
+            self._image_history.append(img)
 
         sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
         print('current charge:', sensor_window[-1][0]['battery charge'])

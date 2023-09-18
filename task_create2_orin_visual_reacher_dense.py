@@ -171,7 +171,11 @@ def main(seed=-1):
         dense_reward=True
         )
     
-    env = NormalizedEnv(env)
+    env = NormalizedEnv(env, save_images=True, 
+                        images_path=args.work_dir+'images/',
+                        save_data=True,
+                        data_path=args.work_dir+'data.txt')
+    
     set_seed_everywhere(seed=args.seed)
     env.start()
 
@@ -228,19 +232,17 @@ def main(seed=-1):
         proprioception = next_proprioception
 
         if done:
-            log_data = {}
-            log_data['tag'] = 'train'
-            log_data['dump'] = True
-            log_data['episode'] = episode
-            log_data['step'] = step
-            log_data['return'] = ret
-            log_data['length'] = epi_steps
+            info['tag'] = 'train'
+            info['dump'] = True
+
+            L.push(info)
 
             ret = 0
             epi_steps = 0
             episode += 1
 
-            L.push(log_data)
+            if episode == 4:
+                break
 
             (image, proprioception) = env.reset()
             done = False

@@ -150,7 +150,7 @@ class BaseAgent:
         # if self._update_step < 15:
         #     print(f'Update {self._update_step} took {t3 - t2}s')
 
-        info['update_time'] = (t1 - t2) * 1000
+        info['update_time'] = (t2 - t1) * 1000
         info['num_updates'] = self._update_step
 
         return [info]
@@ -322,12 +322,6 @@ class AsyncSACRADAgent(BaseAgent):
         return np.asarray(actions)
 
     def update(self):
-        # if not self._actor_queue.empty():
-        #     while not self._actor_queue.empty():
-        #         data = self._actor_queue.get()
-        #     with self._actor_lock:
-        #         self._actor_params = data    
-
         if not self._update_queue.empty():
             info = []
             while not self._update_queue.empty():
@@ -365,27 +359,35 @@ class AsyncSACRADAgent(BaseAgent):
                 elif ins == 'close':
                     print('Closing asynchronous updates. ' 
                           f'Completed {self._update_step} updates.')
-
                     if self._buffer_save_path:
                         self._replay_buffer.save(self._buffer_save_path)
-
                     self._replay_buffer.close()
                     self._closeing_lock.release()
-
+                    return
+                
+                elif ins == 'close_no_save':
+                    print('Closing asynchronous updates. ' 
+                          f'Completed {self._update_step} updates.')
+                    self._replay_buffer.close()
+                    self._closeing_lock.release()
                     return
 
             info = super().update()
 
-            self._update_queue.put(info[0])
-
-            if self._update_step % self._actor_update_freq == 0:
-                self._actor_queue.put(self._actor.params)        
+            if self._update_step >= 10:
+                self._update_queue.put(info[0])
+                if self._update_step % self._actor_update_freq == 0:
+                    self._actor_queue.put(self._actor.params)        
 
     def pause_update(self):
+        if self._pause_update:
+            return
         self._pause_update = True
         self._instructions_queue.put('pause')
 
     def resume_update(self):
+        if not self._pause_update:
+            return
         self._pause_update = False
         self._instructions_queue.put('resume')
 
@@ -393,8 +395,11 @@ class AsyncSACRADAgent(BaseAgent):
         self._instructions_queue.put('checkpoint')
         self._instructions_queue.put(step)
 
-    def close(self):
-        self._instructions_queue.put('close')
+    def close(self, without_save=False):
+        if without_save:
+            self._instructions_queue.put('close_no_save')
+        else:
+            self._instructions_queue.put('close')
         with self._closeing_lock:
             self._actor_queue.put('close')
             time.sleep(1)
