@@ -9,7 +9,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere
 from jsac.helpers.logger import Logger
 from jsac.envs.create2_orin_visual_reacher.env import Create2VisualReacherEnv
-from jsac.helpers.utils import NormalizedEnv
+from jsac.helpers.utils import WrappedEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
@@ -48,32 +48,33 @@ def parse_args():
     parser.add_argument('--stack_frames', default=3, type=int)
 
     parser.add_argument('--camera_id', default=0, type=int)
+
     parser.add_argument('--episode_length_time', default=10.0, type=float)
+    parser.add_argument('--reward_scale', default=20.0, type=float)
     parser.add_argument('--dt', default=0.03, type=float)
-    parser.add_argument('--min_target_size', default=0.99, type=float)
+    parser.add_argument('--min_target_size', default=1.0, type=float)
     parser.add_argument('--pause_before_reset', default=0, type=float)
     parser.add_argument('--pause_after_reset', default=0, type=float)
-
     parser.add_argument('--tqdm', default=True, action='store_true')
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=120000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=3000, type=int)
-    parser.add_argument('--env_steps', default=100000, type=int)
+    parser.add_argument('--init_steps', default=1000, type=int)
+    parser.add_argument('--env_steps', default=120000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
     parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=5e-4, type=float)
+    parser.add_argument('--critic_lr', default=1e-3, type=float)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=5e-4, type=float)
+    parser.add_argument('--actor_lr', default=1e-3, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--use_critic_encoder', default=True, 
                         action='store_true')
@@ -99,24 +100,26 @@ def parse_args():
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
 
+    parser.add_argument('--save_image', default=False, action='store_true')
+    parser.add_argument('--save_data', default=False, action='store_true')
+
     parser.add_argument('--buffer_save_path', default='./buffers/', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
 
     args = parser.parse_args()
     return args
 
+def get_run_flag():
+    with open('run_flags.txt', 'r') as f:
+        return int(f.readline())
+    
 def main(seed=-1):
     args = parse_args()
 
-    # curriculum = [
-    #     (30000, 0.10),
-    #     (45000, 0.15),
-    #     (60000, 0.20),
-    #     (70000, 0.25),
-    #     (75000, 0.30),
-    #     (args.env_steps + 1000, 0.30)
-    # ]
-    # curriculum_idx = 0
+    RF_CONTINUE = 0
+    RF_END_RUN_WO_SAVE = 1
+    RF_END_RUN_W_SAVE = 2
+
 
     assert args.mode == MODE.IMG_PROP
     assert args.sync_mode == False
@@ -140,6 +143,12 @@ def main(seed=-1):
             pass
         else:
             exit(0)
+
+    rf = get_run_flag()
+    if rf != RF_CONTINUE:
+        print('Ending the run as the RF flag is set to END_RUN in', end=' ')
+        print('run_flags.txt.\nPlease set the flag to 0 and try again!')
+        exit(0)
 
     make_dir(args.work_dir)
 
@@ -171,15 +180,20 @@ def main(seed=-1):
         dense_reward=True
         )
     
-    env = NormalizedEnv(env, save_images=True, 
-                        images_path=args.work_dir+'images/',
-                        save_data=True,
-                        data_path=args.work_dir+'data.txt')
+    episode_length_step = int(args.episode_length_time / args.dt)
+    env = WrappedEnv(env, 
+                     episode_max_steps=episode_length_step,
+                     is_min_time=False,
+                     reward_scale=args.reward_scale,
+                     mode=args.mode,
+                     save_images=args.save_image, 
+                     images_save_path=args.work_dir+'images/',
+                     save_data=args.save_data,
+                     data_save_path=args.work_dir+'data.txt')
     
     set_seed_everywhere(seed=args.seed)
     env.start()
 
-    episode_length_step = int(args.episode_length_time / args.dt)
     args.image_shape = env.image_space.shape
     args.proprioception_shape = env.observation_space.shape
     args.action_shape = env.action_space.shape
@@ -195,35 +209,17 @@ def main(seed=-1):
         agent = AsyncSACRADAgent(args)
 
     task_start_time = time.time()
-
     update_paused = True
-
     (image, proprioception) = env.reset()
 
-    ret = 0
-    episode = 0
-    step = 0
-    epi_steps = 0
-
-    for step in tqdm.tqdm(range(args.start_step, args.env_steps + 1), 
-                          smoothing=0.1, disable=not args.tqdm):
+    while env.total_steps < args.env_steps:
         t1 = time.time()
-        # if step < args.init_steps:
-        #     action = env.action_space.sample()
-        #     action = np.tanh(action)
-        # else:
         action = agent.sample_actions((image, proprioception))
         t2 = time.time()
         (next_image, next_proprioception), reward, done, info = env.step(action)
         t3 = time.time()
 
-        ret += reward
-        epi_steps += 1
-        
-        mask = 0
-        if epi_steps == episode_length_step:
-            done = True
-            mask = 1.0
+        mask = 0.0 if done else 1.0
 
         agent.add((image, proprioception), action, reward, 
                   (next_image, next_proprioception),  mask)
@@ -231,23 +227,19 @@ def main(seed=-1):
         image = next_image
         proprioception = next_proprioception
 
-        if done:
+        if done or 'TimeLimit.truncated' in info:
+            (image, proprioception) = env.reset()
+
             info['tag'] = 'train'
             info['dump'] = True
 
             L.push(info)
 
-            ret = 0
-            epi_steps = 0
-            episode += 1
-
-            if episode == 4:
+            rf = get_run_flag()
+            if rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:
                 break
 
-            (image, proprioception) = env.reset()
-            done = False
-
-            if update_paused and step >= args.init_steps:
+            if update_paused and env.total_steps >= args.init_steps:
                 agent.resume_update()
                 update_paused = False
                 time.sleep(25)
@@ -256,30 +248,33 @@ def main(seed=-1):
             update_infos = agent.update()
             if update_infos is not None:
                 for update_info in update_infos:
-                    update_info['inference_time'] = (t2 - t1) * 1000
-                    update_info['env_step_time'] = (t3 - t2) * 1000
+                    update_info['action_sample_time'] = (t2 - t1) * 1000
+                    update_info['env_time'] = (t3 - t2) * 1000
+                    update_info['step'] = env.total_steps
                     update_info['tag'] = 'train'
                     update_info['dump'] = False
-                    update_info['step'] = step
-
                     L.push(update_info)
 
-        if step % args.xtick == 0:
+        if env.total_steps % args.xtick == 0:
             L.plot()
 
-        if args.save_model and step % args.save_model_freq == 0 and \
-            step < args.env_steps:
-            agent.checkpoint(step)
+        if args.save_model and env.total_steps % args.save_model_freq == 0 and \
+            env.total_steps < args.env_steps:
+            agent.checkpoint(env.total_steps)
 
     agent.pause_update()
-    if args.save_model:
-        agent.checkpoint(args.env_steps)
+    env.close()
+
+    if rf != RF_END_RUN_WO_SAVE and args.save_model:
+        agent.checkpoint(env.total_steps)
     L.plot()
     L.close()
 
-
-    agent.close()
-    env.close()
+    if rf == RF_END_RUN_WO_SAVE:
+        agent.close(without_save=True)
+    else:
+        agent.close()
+    
 
     end_time = time.time()
     print(f'\nFinished in {end_time - task_start_time}s')
@@ -288,10 +283,3 @@ def main(seed=-1):
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     main()
-
-
-# sudo chmod a+rw /dev/ttyUSB0
-
-
-    
-

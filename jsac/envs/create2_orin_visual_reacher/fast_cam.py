@@ -5,9 +5,10 @@ from multiprocessing import Queue, Process
 from threading import Thread, Lock
 
 class FastCamera:
-    def __init__(self, res, device_id=0):
+    def __init__(self, res, device_id=0, dt=0):
         self._res = res  # (width, height)
         self._device_id = device_id
+        self._dt = dt
 
         self._img_queue = Queue()
         self._info_queue = Queue()
@@ -29,7 +30,7 @@ class FastCamera:
             data = self._img_queue.get()
 
             if isinstance(data, str):
-                if data == 'close':
+                if data == 'exit':
                     return
                 else:
                     continue
@@ -48,8 +49,8 @@ class FastCamera:
             return self._last_img
     
     def close(self):
-        self._img_queue.put('close')
-        self._info_queue.put('close')
+        self._img_queue.put('exit')
+        self._info_queue.put('exit')
 
         self._img_process.join()
         self._rcv_img_thread.join()
@@ -85,10 +86,14 @@ class FastCamera:
         for _ in range(5):
             ret, frame = cap.read()
 
+        if self._dt > 0:
+            self._dt -= 0.0001
+            self._step_end_time = time.time() + self._dt
+
         while True:
             if not self._info_queue.empty():
                 msg = self._info_queue.get()
-                if msg == 'close':
+                if msg == 'exit':
                     cap.release()
                     cv2.destroyAllWindows()
                     return
@@ -98,9 +103,15 @@ class FastCamera:
             frame = cv2.rotate(frame, cv2.ROTATE_180)
             self._img_queue.put(frame)
 
+            if self._dt > 0:
+                sleep_time = self._step_end_time - time.time()
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                self._step_end_time = time.time() + self._dt
+
 
 # if __name__ == '__main__':
-#     fcam = FastCamera(res=(160, 90))
+#     fcam = FastCamera(res=(160, 90), dt=0.015)
     
 #     times = []  
 #     t1 = time.time()

@@ -7,6 +7,7 @@ import time
 import gym
 import logging
 import numpy as np
+from collections import deque
 import jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_config as create2_config
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env import utils as utils
 
@@ -19,7 +20,6 @@ from jsac.envs.create2_orin_visual_reacher.senseact_create_env.sharedbuffer impo
 import cv2
 from statistics import mean
 from  jsac.envs.create2_orin_visual_reacher.fast_cam import FastCamera
-from collections import deque
 
 class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     """Create2 environment for training it drive forward.
@@ -159,7 +159,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         if image_shape != (0, 0, 0):
             height, width, _ = self._image_shape
-            self._cam = FastCamera(res=(width, height), device_id=camera_id)
+            self._cam = FastCamera(res=(width, height), device_id=camera_id, dt=dt)
 
         super().__init__(communicator_setups=communicator_setups,
                         action_dim=len(self._action_space.low),
@@ -178,10 +178,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                 if name == 'Create2':
                     s = self._compute_roomba_obs_(sensor_window, timestamp_window, index_window)
                     self._roomba_obs_buffer.write(s, timestamp=timestamp_window[-1])
-                # elif name == 'Camera':
-                #     s, r = self._compute_image_obs_(sensor_window, timestamp_window, index_window)
-                #     self._image_obs_buffer.write(s, timestamp=timestamp_window[-1])
-                #     self._image_reward_buffer.write(r, timestamp=timestamp_window[-1])
+                elif name == 'Camera':
+                    s, r = self._compute_image_obs_(sensor_window, timestamp_window, index_window)
+                    self._image_obs_buffer.write(s, timestamp=timestamp_window[-1])
+                    self._image_reward_buffer.write(r, timestamp=timestamp_window[-1])
                 else:
                     raise NotImplementedError('Unsupported communicator')
 
@@ -195,8 +195,8 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         if self._image_shape != (0, 0, 0):
             image = self._cam.get_img()
 
-            self._image_history.append(image)
-            latest_image = np.concatenate(self._image_history, axis=-1)
+            self._image_buffer.append(image)
+            latest_image = np.concatenate(self._image_buffer, axis=-1)
 
             im_r, im_d = self._calc_image_reward(image)
 
@@ -292,10 +292,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         # wait for camera to startup properly
         img = self._cam.get_img()
-        image_stack = self._image_shape[-1] // 3
-        self._image_history = deque([], maxlen=image_stack)
-        for _ in range(image_stack):
-            self._image_history.append(img)
+        image_stack = self._image_shape[-1]//3
+        self._image_buffer = deque([], maxlen=image_stack)
+        for _ in range(self._image_buffer.maxlen):
+            self._image_buffer.append(img)
 
         sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
         print('current charge:', sensor_window[-1][0]['battery charge'])

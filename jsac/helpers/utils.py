@@ -97,6 +97,7 @@ class WrappedEnv(Env):
             env,
             episode_max_steps=0,
             is_min_time=False,
+            reward_scale=1.0,
             reward_penalty=0,
             steps_penalty=0,
             mode='',
@@ -109,6 +110,7 @@ class WrappedEnv(Env):
         self._wrapped_env = env
         self._episode_max_steps = episode_max_steps
         self._is_min_time = is_min_time
+        self._reward_scale = reward_scale
         self._reward_penalty = reward_penalty
         self._steps_penalty = steps_penalty
         self._mode = mode
@@ -137,9 +139,9 @@ class WrappedEnv(Env):
 
         if not self._is_min_time and \
             self._episode_steps == self._episode_max_steps:
-            done = True 
+            info['TimeLimit.truncated'] = True 
 
-        if done:
+        if done or (not self._is_min_time and 'TimeLimit.truncated' in info):
             self._episode += 1
             info['episode'] = self._episode
             info['step'] = self._total_steps
@@ -155,7 +157,7 @@ class WrappedEnv(Env):
                 self._total_steps += self._steps_penalty
                 self._episode_steps += self._steps_penalty
                 self._sub_episode += 1
-                info['reached_episode_max_steps'] = True
+                info['TimeLimit.truncated'] = True
                 info['episode'] = self._episode
                 info['sub_episode'] = self._sub_episode
                 info['sub_episode_steps '] = self._sub_episode_steps 
@@ -186,7 +188,7 @@ class WrappedEnv(Env):
             other_data = {'Reward': reward, 'Action': scaled_action}
             self._write_data(next_obs, other_data)
 
-        return Step(next_obs, reward, done, info)
+        return Step(next_obs, reward * self._reward_scale, done, info)
 
     def __str__(self):
         return "RealTimeEnv: %s" % self._wrapped_env
@@ -291,4 +293,3 @@ class WrappedEnv(Env):
             return hooked
         else:
             return orig_attr
-        
