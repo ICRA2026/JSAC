@@ -2,14 +2,19 @@
 import time
 import cv2
 import sys
-from multiprocessing import Process
 
 import numpy as np
+from fast_cam import FastCamera
 
 def nothing(x):
     pass
 
-useCamera=True
+useCamera=False
+
+# Check if filename is passed
+if (len(sys.argv) <= 1) :
+    print ("'Usage: python hsvThresholder.py <ImageFilePath>' to ignore camera and use a local image.")
+    useCamera = True
 
 # Create a window
 cv2.namedWindow('image')
@@ -33,34 +38,19 @@ phMin = psMin = pvMin = phMax = psMax = pvMax = 0
 
 # Output Image to display
 if useCamera:
-    # cap = cv2.VideoCapture(0)
-    sensor_buffer_state = None 
-    actuator_buffer_state = None
-    
-    from depstech_camera_communicator import CameraCommunicator
-    comm = CameraCommunicator(res=(320, 240), device_id=0)
-    if comm.use_sensor:
-        sensor_buffer_state = comm.sensor_buffer.get_state()
-    if comm.use_actuator:
-        actuator_buffer_state = comm.actuator_buffer.get_state()
-
-    process = Process(target=comm.run, args=(sensor_buffer_state, 
-                                                actuator_buffer_state))
-    process.start()
-    waitTime = 33
+    cam = FastCamera(res=(1280, 720), dt=0.03)
+    waitTime = 30
 else:
     img = cv2.imread(sys.argv[1])
     output = img
-    waitTime = 20
+    waitTime = 33
 
 while(1):
 
     if useCamera:
         # Capture frame-by-frame
         # ret, img = cap.read()
-        img, _, _ = comm.get_image()
-        # print(img.shape(), type(img))
-        img = img[0].reshape(240, 320, 3)
+        img = cam.get_img()
 
     # get current positions of all trackbars
     hMin = cv2.getTrackbarPos('HMin','image')
@@ -71,7 +61,7 @@ while(1):
     sMax = cv2.getTrackbarPos('SMax','image')
     vMax = cv2.getTrackbarPos('VMax','image')
 
-    # Set minimum and max HSV values to display
+    # Set minimum and max HSV values to display15
     lower = np.array([hMin, sMin, vMin])
     upper = np.array([hMax, sMax, vMax])
 

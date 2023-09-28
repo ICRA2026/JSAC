@@ -8,12 +8,12 @@ import os
 
 
 class MujocoVisualEnv(gym.Wrapper):
-    def __init__(self, env_name, use_img, 
+    def __init__(self, env_name, state_mode, 
                  seed=0, image_stack=1, 
                  image_width=120, image_height=120, 
                  mode='hwc', img_save_path='.'):
         super().__init__(gym.make(env_name))  ### Gym == 0.23.1
-        self._use_img = use_img
+        self._state_mode = state_mode
         self._mode = mode
         self.seed(seed)
 
@@ -22,7 +22,7 @@ class MujocoVisualEnv(gym.Wrapper):
         self.save_folder_itr=0
         self.save_path = img_save_path
 
-        if self._use_img:
+        if self._state_mode=='img' or self._state_mode=='img_prop':
             if self._mode == 'chw':
                 self._channel_axis = 0
                 self._image_shape = (image_stack * 3, image_height, image_width)
@@ -53,7 +53,7 @@ class MujocoVisualEnv(gym.Wrapper):
 
         ob = self._get_ob(ob)
 
-        if self._use_img:
+        if self._state_mode=='img' or self._state_mode=='img_prop':
             new_img = self._get_new_img()
             self._image_buffer.append(new_img)
             self._latest_image = np.concatenate(self._image_buffer, axis=self._channel_axis)
@@ -61,20 +61,22 @@ class MujocoVisualEnv(gym.Wrapper):
         if done:
             self._reset = False
 
-        if self._use_img:
-            return (self._latest_image, ob), reward, done, info
-        else:
+        if self._state_mode=='img':
+            return self._latest_image, reward, done, info
+        if self._state_mode=='prop':
             return ob, reward, done, info
+        return (self._latest_image, ob), reward, done, info 
 
     def reset(self, save_img=False):
         ob = self.env.reset()
         ob = self._get_ob(ob)
 
-        if self._use_img:
+        if self._state_mode=='img' or self._state_mode=='img_prop':
             if save_img:
                 self.save_img = True
                 self.save_folder_itr += 1
                 self.save_img_itr = 0
+
             new_img = self._get_new_img()
             for _ in range(self._image_buffer.maxlen):
                 self._image_buffer.append(new_img)
@@ -83,10 +85,11 @@ class MujocoVisualEnv(gym.Wrapper):
         
         self._reset = True
         
-        if self._use_img:
-            return (self._latest_image, ob)
-        else:
+        if self._state_mode=='img':
+            return self._latest_image
+        if self._state_mode=='prop':
             return ob
+        return (self._latest_image, ob)
 
     def _get_new_img(self):
         img = self.env.render(mode='rgb_array')

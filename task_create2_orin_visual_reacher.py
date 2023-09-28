@@ -32,25 +32,25 @@ config = {
     
     'latent': 50,
 
-    'mlp': [1024, 1024],
+    'mlp': [256, 256],
 }
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
     parser.add_argument('--name', default='create2_orin_visual_reacher', type=str)
-    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--seed', default=4, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--image_height', default=90, type=int)
-    parser.add_argument('--image_width', default=160, type=int)
+    parser.add_argument('--image_width', default=120, type=int)
     parser.add_argument('--stack_frames', default=3, type=int)
 
     parser.add_argument('--camera_id', default=0, type=int)
     parser.add_argument('--episode_length_time', default=15.0, type=float)
     parser.add_argument('--dt', default=0.045, type=float)
-    parser.add_argument('--min_target_size', default=0.1, type=float)
+    parser.add_argument('--min_target_size', default=0.2, type=float)
     parser.add_argument('--reset_penalty_steps', default=67, type=int)
     parser.add_argument('--reward', default=-1, type=float)
     parser.add_argument('--pause_before_reset', default=0, type=float)
@@ -63,7 +63,7 @@ def parse_args():
     
     # train
     parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--env_steps', default=100000, type=int)
+    parser.add_argument('--env_steps', default=90000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
@@ -71,7 +71,7 @@ def parse_args():
     
     # critic
     parser.add_argument('--critic_lr', default=1e-3, type=float)
-    parser.add_argument('--critic_tau', default=0.005, type=float)
+    parser.add_argument('--critic_tau', default=0.01, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
@@ -232,11 +232,16 @@ def main(seed=-1):
         proprioception = next_proprioception
 
         if done:
-            (image, proprioception) = env.reset()
-
+            episode = info['episode']
+            elapsed_time = "{:.3f}".format(time.time() - task_start_time)
+            print(f'> Episode {episode} done. ' + 
+                  f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s')
+            
             info['tag'] = 'train'
             info['dump'] = True
             L.push(info)
+
+            (image, proprioception) = env.reset()
 
             rf = get_run_flag()
             if rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:
@@ -250,8 +255,9 @@ def main(seed=-1):
         if not done and 'TimeLimit.truncated' in info:
             episode = info['episode']
             sub_epi = info['sub_episode']
-            print(f'Episode {episode}, sub-episode {sub_epi} done. ' + 
-                  f'Step: {env.total_steps}')
+            elapsed_time = "{:.3f}".format(time.time() - task_start_time)
+            print(f'> Episode {episode}, sub-episode {sub_epi} done. ' + 
+                  f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s')
             
             rf = get_run_flag()
             if rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:

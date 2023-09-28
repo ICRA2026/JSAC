@@ -6,7 +6,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
 # os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv, NormalizedEnv
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
 from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
@@ -41,29 +41,29 @@ def parse_args():
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--env_name', default='Reacher-v2', type=str)
-    parser.add_argument('--image_height', default=120, type=int)
-    parser.add_argument('--image_width', default=120, type=int)
+    parser.add_argument('--image_height', default=80, type=int)
+    parser.add_argument('--image_width', default=80, type=int)
     parser.add_argument('--stack_frames', default=3, type=int)
     parser.add_argument('--tqdm', default=True, action='store_true')
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=30000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=50000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--env_steps', default=30000, type=int)
+    parser.add_argument('--env_steps', default=50000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
     parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=1e-3, type=float)
+    parser.add_argument('--critic_lr', default=5e-4, type=float)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=1e-3, type=float)
+    parser.add_argument('--actor_lr', default=5e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--use_critic_encoder', default=True, 
                         action='store_true')
@@ -81,11 +81,11 @@ def parse_args():
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=300, type=int)
+    parser.add_argument('--xtick', default=500, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
-    parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_model_freq', default=10000, type=int)
+    parser.add_argument('--save_model', default=False, action='store_true')
+    parser.add_argument('--save_model_freq', default=-1, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
 
@@ -143,8 +143,8 @@ def main(seed=-1):
 
     img_save_path = f'{args.work_dir}/imgs' 
     env = MujocoVisualEnv(
-        args.env_name, True, args.seed, args.stack_frames, args.image_width, 
-        args.image_height, img_save_path=img_save_path)
+        args.env_name, args.mode, args.seed, args.stack_frames, 
+        args.image_width, args.image_height, img_save_path=img_save_path)
     
     env = WrappedEnv(env, 
                      mode=args.mode,
@@ -197,7 +197,6 @@ def main(seed=-1):
         proprioception = next_proprioception
 
         if done:
-            print(info)
             (image, proprioception) = env.reset()
             info['tag'] = 'train'
             info['dump'] = True
@@ -240,10 +239,10 @@ def main(seed=-1):
 if __name__ == '__main__':
     mp.set_start_method('spawn')
 
-    # for i in range(15):
-    #     main(i)
+    for i in range(10):
+        main(i)
 
-    main()
+    # main()
 
 
 

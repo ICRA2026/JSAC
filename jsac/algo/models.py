@@ -35,6 +35,7 @@ class SpatialSoftmax(nn.Module):
         feature = feature.reshape(-1, self.height*self.width)
 
         feature = feature/self._temperature
+        
         softmax_attention = nn.activation.softmax(feature, axis = -1)
 
         expected_x = jnp.sum(self._pos_x*softmax_attention, axis = 1, 
@@ -148,7 +149,8 @@ class ActorModel(nn.Module):
         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
 
         mu = nn.Dense(self.action_dim, 
-                      kernel_init=default_init())(outputs)
+                      kernel_init=default_init(self.final_fc_init_scale)
+                      )(outputs)
         
         if deterministic:
             return nn.tanh(mu)

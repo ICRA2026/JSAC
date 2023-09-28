@@ -26,7 +26,7 @@ OPCODE_INFO = {
     142: {'name': 'sensors'},
     143: {'name': 'seek_dock'},
     144: {'name': 'motors_pwm'},
-    145: {'name': 'drive_direct', 'params': OrderedDict([('left', [-300, 300]), ('right', [-300, 300])])},
+    145: {'name': 'drive_direct', 'params': OrderedDict([('left', [-150, 150]), ('right', [-150, 150])])},
     146: {'name': 'drive_pwm'},
     148: {'name': 'stream'},
     149: {'name': 'query_list'},

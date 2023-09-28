@@ -6,14 +6,13 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
 # os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, NormalizedEnv
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
 from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
 import tqdm
-import jaxlib
 import argparse
 import shutil
 import multiprocessing as mp
@@ -30,29 +29,29 @@ config = {
     
     'latent': 50,
 
-    'mlp': [1024, 1024],
+    'mlp': [512, 512],
 }
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='reacher_async_img_prop', type=str)
-    parser.add_argument('--seed', default=7, type=int)
-    parser.add_argument('--mode', default='img_prop', type=str, 
+    parser.add_argument('--name', default='reacher_async_img', type=str)
+    parser.add_argument('--seed', default=3, type=int)
+    parser.add_argument('--mode', default='img', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--env_name', default='Reacher-v2', type=str)
-    parser.add_argument('--image_height', default=120, type=int)
-    parser.add_argument('--image_width', default=120, type=int)
+    parser.add_argument('--image_height', default=80, type=int)
+    parser.add_argument('--image_width', default=80, type=int)
     parser.add_argument('--stack_frames', default=3, type=int)
     parser.add_argument('--tqdm', default=True, action='store_true')
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=30000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=50000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--env_steps', default=30000, type=int)
+    parser.add_argument('--env_steps', default=50000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
@@ -82,13 +81,16 @@ def parse_args():
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=300, type=int)
+    parser.add_argument('--xtick', default=500, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
-    parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_model_freq', default=10000, type=int)
+    parser.add_argument('--save_model', default=False, action='store_true')
+    parser.add_argument('--save_model_freq', default=-1, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
+
+    parser.add_argument('--save_image', default=False, action='store_true')
+    parser.add_argument('--save_data', default=False, action='store_true')
 
     parser.add_argument('--buffer_save_path', default='', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
@@ -99,7 +101,7 @@ def parse_args():
 def main(seed=-1):
     args = parse_args()
 
-    assert args.mode == MODE.IMG_PROP
+    assert args.mode == MODE.IMG
     assert args.sync_mode == False
 
     if seed != -1:
@@ -141,13 +143,20 @@ def main(seed=-1):
 
     img_save_path = f'{args.work_dir}/imgs' 
     env = MujocoVisualEnv(
-        args.env_name, True, args.seed, args.stack_frames, args.image_width, 
-        args.image_height, img_save_path=img_save_path)
+        args.env_name, args.mode, args.seed, args.stack_frames, 
+        args.image_width, args.image_height, img_save_path=img_save_path)
     
-    env = NormalizedEnv(env, save_images=False, 
-                        images_path=args.work_dir+'images/',
-                        save_data=False,
-                        data_path=args.work_dir+'data.txt')
+    env = WrappedEnv(env, 
+                     mode=args.mode,
+                     save_images=args.save_image, 
+                     images_save_path=args.work_dir+'images/',
+                     save_data=args.save_data,
+                     data_save_path=args.work_dir+'data.txt')
+
+    # env = NormalizedEnv(env, save_images=False, 
+    #                     images_path=args.work_dir+'images/',
+    #                     save_data=False,
+    #                     data_path=args.work_dir+'data.txt')
 
     set_seed_everywhere(seed=args.seed)
 
@@ -157,64 +166,54 @@ def main(seed=-1):
     args.net_params = config
     args.env_action_space = env.action_space
 
-    (image, proprioception) = env.reset()
     if args.sync_mode:
         agent = SACRADAgent(args)
     else:
         agent = AsyncSACRADAgent(args)
 
     task_start_time = time.time()
-
     update_paused = True
+    image = env.reset()
 
-    for step in range(args.start_step, args.env_steps + 1):
+    step = 0
+    while step < args.env_steps:
         t1 = time.time()
-    
-        action = agent.sample_actions((image, proprioception))
-
+        action = agent.sample_actions(image)
         t2 = time.time()
-        (next_image, next_proprioception), reward, done, info = env.step(action)
+        next_image, reward, done, info = env.step(action)
         t3 = time.time()
 
+        step += 1
+
+        # mask = 0.0 if done else 1.0
         if not done or 'TimeLimit.truncated' in info:
             mask = 1.0
         else:
             mask = 0.0
 
-        agent.add((image, proprioception), action, reward, 
-                  (next_image, next_proprioception),  mask)
-
+        agent.add(image, action, reward, next_image,  mask)
         image = next_image
-        proprioception = next_proprioception
 
         if done:
-            (image, proprioception) = env.reset()
-            done = False
-
-            if update_paused and step >= args.init_steps:
-                agent.resume_update()
-                update_paused = False
-
+            image = env.reset()
             info['tag'] = 'train'
             info['dump'] = True
-
             L.push(info)
 
-        if not update_paused and step >= args.init_steps:
+        if step >= args.init_steps:
+            if update_paused:
+                agent.resume_update()
+                update_paused = False
             update_infos = agent.update()
             if update_infos is not None:
                 for update_info in update_infos:
                     update_info['action_sample_time'] = (t2 - t1) * 1000
                     update_info['env_time'] = (t3 - t2) * 1000
+                    update_info['step'] = step
                     update_info['tag'] = 'train'
                     update_info['dump'] = False
-                    update_info['step'] = step
 
                     L.push(update_info)
-
-        if step > 200:
-            env.set_save_images(False)
-            env.set_save_data(False)
 
         if step % args.xtick == 0:
             L.plot()
@@ -228,14 +227,6 @@ def main(seed=-1):
         agent.checkpoint(args.env_steps)
     L.plot()
     L.close()
-
-    # for i in range(2):
-    #     (image, proprioception) = env.reset(save_img=True)
-    #     done=False
-    #     while not done:
-    #         action = agent.sample_actions((image, proprioception), 
-    #                                       deterministic=True)
-    #         image, proprioception, reward, done, info = env.step(action)
 
     agent.close()
 
