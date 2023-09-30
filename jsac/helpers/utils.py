@@ -99,13 +99,7 @@ class WrappedEnv(Env):
             is_min_time=False,
             reward_scale=1.0,
             reward_penalty=0,
-            steps_penalty=0,
-            mode='',
-            save_images = False,
-            chw_image = False,
-            images_save_path = None,
-            save_data = False,
-            data_save_path = None):
+            steps_penalty=0):
         
         self._wrapped_env = env
         self._episode_max_steps = episode_max_steps
@@ -113,12 +107,6 @@ class WrappedEnv(Env):
         self._reward_scale = reward_scale
         self._reward_penalty = reward_penalty
         self._steps_penalty = steps_penalty
-        self._mode = mode
-        self._save_images = save_images
-        self._chw_image = chw_image
-        self._images_save_path = images_save_path
-        self._save_data = save_data
-        self._data_save_path = data_save_path
         self._spec = EnvSpec(env.spec, self.observation_space, self.action_space)
 
         self._total_steps  = 0
@@ -170,8 +158,6 @@ class WrappedEnv(Env):
         ret = self._wrapped_env.reset()
         if reset_stats:
             self._reset_stats()
-        if self._save_images or self._save_data:
-            self._write_data(obs=ret)
         return ret
 
     def step(self, action):
@@ -184,65 +170,12 @@ class WrappedEnv(Env):
         wrapped_step = self._wrapped_env.step(scaled_action)
         next_obs, reward, done, info = wrapped_step
         done, info = self._monitor(reward, done, info)
-        if self._save_images or self._save_data:
-            other_data = {'Reward': reward, 'Action': scaled_action}
-            self._write_data(next_obs, other_data)
 
         return Step(next_obs, reward * self._reward_scale, done, info)
 
     def __str__(self):
         return "RealTimeEnv: %s" % self._wrapped_env
 
-    def set_save_images(self, save_images, images_save_path=None):
-        self._save_images = save_images
-        if images_save_path:
-            self._images_save_path = images_save_path
-    
-    def set_save_data(self, save_data, data_save_path=None):
-        self._save_data= save_data
-        if data_save_path:
-            self._data_save_path = data_save_path
-
-    def _write_data(self, obs=None, other_data=None):
-        if self._mode == MODE.IMG_PROP:
-            (image, propri) = obs
-        elif self._mode == MODE.IMG:
-            image = obs
-        elif self._mode == MODE.PROP:
-            propri = obs
-
-        if self._save_images:
-            if self._chw_image:
-                image = np.transpose(image, (1,2,0))
-            channels = image.shape[-1]
-            stacks = channels//3
-            if stacks > 1:
-                images = []
-                for i in range(stacks):
-                    images.append(image[:,:,i*3:(i+1)*3])
-                image = np.vstack(images)
-                
-            dir = f'{self._images_save_path}Episode_{self._episode}/'
-            if not os.path.exists(dir):
-                make_dir(dir)
-            file_path = f'{dir}step_{self._episode_steps}.jpg'
-            cv2.imwrite(file_path, image)
-        
-        if self._save_data:
-            if other_data is not None:
-                other_data['Proprioception'] = propri
-                data = other_data
-            else:
-                data = {'Proprioception': propri}
-
-            with open(self._data_save_path, 'a') as f:
-                f.write(f'Episode: {self._episode}, episode_step: ' + 
-                        f'{self._episode_steps}, total_step: {self._total_steps}\n')
-                
-                for key, value in data.items():
-                    f.write(f'{key}: {value}\n')
-                
-                f.write('\n')
 
     @property
     def total_steps(self):

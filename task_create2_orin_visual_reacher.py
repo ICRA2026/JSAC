@@ -39,7 +39,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # environment
     parser.add_argument('--name', default='create2_orin_visual_reacher', type=str)
-    parser.add_argument('--seed', default=4, type=int)
+    parser.add_argument('--seed', default=5, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
@@ -100,9 +100,6 @@ def parse_args():
     parser.add_argument('--save_model_freq', default=20000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
-
-    parser.add_argument('--save_image', default=False, action='store_true')
-    parser.add_argument('--save_data', default=False, action='store_true')
 
     parser.add_argument('--buffer_save_path', default='./buffers/', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
@@ -194,12 +191,8 @@ def main(seed=-1):
                      episode_max_steps=episode_length_step,
                      is_min_time=True,
                      reward_penalty=args.reset_penalty_steps * args.reward,
-                     steps_penalty=args.reset_penalty_steps,
-                     mode=args.mode,
-                     save_images=args.save_image, 
-                     images_save_path=args.work_dir+'images/',
-                     save_data=args.save_data,
-                     data_save_path=args.work_dir+'data.txt')
+                     steps_penalty=args.reset_penalty_steps)
+    
     set_seed_everywhere(seed=args.seed)
     env.start()
 
@@ -233,9 +226,11 @@ def main(seed=-1):
 
         if done:
             episode = info['episode']
+            charge = info['battery_charge']
             elapsed_time = "{:.3f}".format(time.time() - task_start_time)
             print(f'> Episode {episode} done. ' + 
-                  f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s')
+                  f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s,' + 
+                  f'Battery charge: {charge}')
             
             info['tag'] = 'train'
             info['dump'] = True

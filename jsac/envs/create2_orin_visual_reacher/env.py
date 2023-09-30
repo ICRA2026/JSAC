@@ -215,7 +215,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         if self._dense_reward:
             reward = im_r
 
-        return (image, roomba_obs), reward,  done
+        sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
+        battery_charge =  sensor_window[-1][0]['battery charge']
+
+        return (image, roomba_obs), reward,  done, {'battery_charge': battery_charge}
 
     def _compute_image_obs_(self, sensor_window, timestamp_window, index_window):
         # return np.concatenate((actual_sensation, [reward], [done]))
@@ -317,7 +320,8 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         # rotate and drive backward 
         logging.info("Moving Create2 into position.")
-        target_values = [-300, -300]
+        target_values = [300, 300]
+        # target_values = [-300, -300]
         move_time_1 = np.random.uniform(low=1, high=1.5)
         move_time_2 = np.random.uniform(low=0.3, high=0.6)
         rotate_time_1 = np.random.uniform(low=0.25, high=0.75)
@@ -343,7 +347,8 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         time.sleep(0.1)
         
         # back
-        self._write_opcode('drive_direct', *[300, 300])
+        self._write_opcode('drive_direct', *[-300, -300])
+        # self._write_opcode('drive_direct', *[300, 300])
         time.sleep(move_time_2)
         self._write_opcode('drive', 0, 0)
         time.sleep(0.1)

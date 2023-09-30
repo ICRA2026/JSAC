@@ -218,9 +218,9 @@ class RTRLBaseEnv(object):
                 time.sleep(self._sleep_time )
 
         self._new_obs_time = time.time()
-        next_obs, reward, done = self.sense()
+        next_obs, reward, done, info = self.sense()
 
-        return next_obs, reward, done
+        return next_obs, reward, done, info
 
     def sense(self):
         """Provides environment information to the agent.
@@ -256,8 +256,8 @@ class RTRLBaseEnv(object):
         # Set the desired action
         self.act(action)
         # Wait for one time-step
-        next_obs, reward, done = self.sense_wait()
-        return next_obs, reward, done, {}
+        next_obs, reward, done, info = self.sense_wait()
+        return next_obs, reward, done, info
 
     def reset(self, blocking=True):
         """Resets the environment based on the 'run_mode'.
