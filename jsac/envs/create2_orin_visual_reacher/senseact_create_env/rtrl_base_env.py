@@ -461,7 +461,7 @@ class RTRLBaseEnv(object):
         self._new_obs_time = time.time()
 
         # Retrieve the first observation of the new episode
-        obs, _, _ = self.sense()
+        obs, _, _, _ = self.sense()
 
         return obs
 

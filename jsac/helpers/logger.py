@@ -9,7 +9,7 @@ from jsac.helpers.utils import show_learning_curve
 from multiprocessing import Queue, Process
 import jaxlib
 import time
-
+import wandb
 
 FORMAT_CONFIG = {
     'rl': {
@@ -25,7 +25,9 @@ FORMAT_CONFIG = {
             ('num_updates', 'NU', 'int'),
             ('update_time', 'UT', 'float'),
             ('action_sample_time', 'AST', 'float'), 
-            ('env_time', 'ET', 'float')
+            ('env_time', 'ENT', 'float'),
+            ('elapsed_time', 'ELT', 'float'),
+            ('battery_charge', 'BC', 'int')
         ],
         'eval': [('step', 'S', 'int'), ('return', 'ER', 'float')]
     }
@@ -36,20 +38,21 @@ class AverageMeter(object):
     def __init__(self):
         self._sum = 0
         self._count = 0
-        self._stp = 0
-
-    def update(self, value, n=1):
+        self._value = 0
+        
+    def update_average(self, value, n=1):
         self._sum += value
         self._count += n
-
-    def update_stp(self, stp):
-        self._stp = stp
+    
+    def update_value(self, value):
+        self._value = value
 
     def value(self):
-        if self._stp > 0:
-            return self._stp
-    
+        if self._value > 0:
+            return self._value
+        
         return self._sum / max(1, self._count)
+        
 
 
 class MetersGroup(object):
@@ -57,12 +60,17 @@ class MetersGroup(object):
         self._file_name = file_name
         self._formating = formating
         self._meters = defaultdict(AverageMeter)
+        self._value_items = ['num_updates', 'battery_charge', 'episode', 
+                             'episode_steps', 'duration', 'return', 'step', 
+                             'elapsed_time']
+        self._int_value_items = ['num_updates', 'battery_charge', 'episode', 
+                             'episode_steps', 'step']
 
     def log(self, key, value, n=1):
-        if 'step' in key.lower():
-            self._meters[key].update_stp(value)
+        if key in self._value_items:
+           self._meters[key].update_value(value)
         else:
-            self._meters[key].update(value, n)
+            self._meters[key].update_average(value, n)
 
     def _prime_meters(self, step, sw):
         data = dict()
@@ -73,7 +81,10 @@ class MetersGroup(object):
             else:
                 key = key[len('eval') + 1:]
             key = key.replace('/', '_')
-            value = meter.value()
+            if key in self._int_value_items:
+                value = int(meter.value())
+            else:
+                value = meter.value()
             data[key] = value
             if sw is not None:
                 sw.add_scalar(tb_key, value, step)
@@ -204,7 +215,7 @@ class Logger(object):
             step = data['step']
             tag = data['tag']
             for k, v in data.items():
-                if k in ['tag', 'dump', 'step']:
+                if k in ['tag', 'dump', 'step', 'TimeLimit.truncated']:
                     continue
                 elif k == 'return':
                     self._returns.append(v)

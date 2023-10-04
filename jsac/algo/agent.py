@@ -238,8 +238,8 @@ class SACRADAgent(BaseAgent):
     def checkpoint(self, step):
         self._save_model_fnc(step)
 
-    def close(self):
-        if self._buffer_save_path:
+    def close(self, without_save=False):
+        if not without_save and self._buffer_save_path:
             self._replay_buffer.save(self._buffer_save_path)
         self._replay_buffer.close()
 

@@ -5,25 +5,19 @@ import time
 from gym.spaces import Box
 import numpy as np
 import os
+from jsac.helpers.utils import MODE
 
 
 class MujocoVisualEnv(gym.Wrapper):
-    def __init__(self, env_name, state_mode, 
-                 seed=0, image_stack=1, 
-                 image_width=120, image_height=120, 
-                 mode='hwc', img_save_path='.'):
+    def __init__(self, env_name, mode, seed=0, image_stack=1, 
+                 image_width=120, image_height=120, img_type='hwc'):
         super().__init__(gym.make(env_name))  ### Gym == 0.23.1
-        self._state_mode = state_mode
         self._mode = mode
+        self._img_type = img_type
         self.seed(seed)
 
-        self.save_img=False
-        self.save_img_itr=0
-        self.save_folder_itr=0
-        self.save_path = img_save_path
-
-        if self._state_mode=='img' or self._state_mode=='img_prop':
-            if self._mode == 'chw':
+        if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:
+            if self._img_type == 'chw':
                 self._channel_axis = 0
                 self._image_shape = (image_stack * 3, image_height, image_width)
             else:
@@ -53,62 +47,51 @@ class MujocoVisualEnv(gym.Wrapper):
 
         ob = self._get_ob(ob)
 
-        if self._state_mode=='img' or self._state_mode=='img_prop':
+        if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:
             new_img = self._get_new_img()
             self._image_buffer.append(new_img)
-            self._latest_image = np.concatenate(self._image_buffer, axis=self._channel_axis)
+            self._latest_image = np.concatenate(self._image_buffer, 
+                                                axis=self._channel_axis)
 
         if done:
             self._reset = False
 
-        if self._state_mode=='img':
+        if self._mode == MODE.IMG:
             return self._latest_image, reward, done, info
-        if self._state_mode=='prop':
+        if self._mode == MODE.PROP:
             return ob, reward, done, info
         return (self._latest_image, ob), reward, done, info 
 
-    def reset(self, save_img=False):
+    def reset(self):
         ob = self.env.reset()
         ob = self._get_ob(ob)
 
-        if self._state_mode=='img' or self._state_mode=='img_prop':
-            if save_img:
-                self.save_img = True
-                self.save_folder_itr += 1
-                self.save_img_itr = 0
-
+        if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:
             new_img = self._get_new_img()
             for _ in range(self._image_buffer.maxlen):
                 self._image_buffer.append(new_img)
 
-            self._latest_image = np.concatenate(self._image_buffer, axis=self._channel_axis)
+            self._latest_image = np.concatenate(self._image_buffer, 
+                                                axis=self._channel_axis)
         
         self._reset = True
         
-        if self._state_mode=='img':
+        if self._mode == MODE.IMG:
             return self._latest_image
-        if self._state_mode=='prop':
+        if self._mode == MODE.PROP:
             return ob
         return (self._latest_image, ob)
 
     def _get_new_img(self):
         img = self.env.render(mode='rgb_array')
-        if self._mode == 'chw':
+        if self._img_type == 'chw':
             c, h, w = self._image_shape
         else:
             h, w, c = self._image_shape
 
         img = cv2.resize(img, (h, w), interpolation=cv2.INTER_AREA)
 
-        if self.save_img:
-            path = f'{self.save_path}/Run_{self.save_folder_itr}/'
-            if not os.path.exists(path):
-                os.makedirs(path)
-            filename = f'{path}/{self.save_img_itr}.jpg'
-            cv2.imwrite(filename, img)
-            self.save_img_itr += 1
-
-        if self._mode == 'chw':
+        if self._img_type == 'chw':
             img = np.transpose(img, [2, 0, 1])
 
         return img

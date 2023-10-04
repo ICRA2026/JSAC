@@ -136,8 +136,8 @@ backups/
 remote/
 *err
 *out
-*results*
-*buffers*
+buffers/
+wandb/
 
 # PhpStorm
 .idea

@@ -32,14 +32,14 @@ config = {
     
     'latent': 50,
 
-    'mlp': [256, 256],
+    'mlp': [512, 512],
 }
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
     parser.add_argument('--name', default='create2_orin_visual_reacher', type=str)
-    parser.add_argument('--seed', default=5, type=int)
+    parser.add_argument('--seed', default=9, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
@@ -63,19 +63,21 @@ def parse_args():
     
     # train
     parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--env_steps', default=90000, type=int)
+    parser.add_argument('--env_steps', default=100000, type=int)
+    parser.add_argument('--timeout_mins', default=100, type=int)
+
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
     parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=1e-3, type=float)
+    parser.add_argument('--critic_lr', default=5e-4, type=float)
     parser.add_argument('--critic_tau', default=0.01, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=1e-3, type=float)
+    parser.add_argument('--actor_lr', default=5e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--use_critic_encoder', default=True, 
                         action='store_true')
@@ -100,6 +102,7 @@ def parse_args():
     parser.add_argument('--save_model_freq', default=20000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=1, type=int)
+    parser.add_argument('--start_episode', default=1, type=int)
 
     parser.add_argument('--buffer_save_path', default='./buffers/', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
@@ -117,16 +120,6 @@ def main(seed=-1):
     RF_CONTINUE = 0
     RF_END_RUN_WO_SAVE = 1
     RF_END_RUN_W_SAVE = 2
-
-    # curriculum = [
-    #     (30000, 0.05),
-    #     (45000, 0.08),
-    #     (60000, 0.11),
-    #     (70000, 0.15),
-    #     (75000, 0.20),
-    #     (args.env_steps + 1000, 0.3)
-    # ]
-    # curriculum_idx = 0
 
     assert args.mode == MODE.IMG_PROP
     assert args.sync_mode == False
@@ -183,15 +176,16 @@ def main(seed=-1):
         camera_id=args.camera_id,
         min_target_size=args.min_target_size,
         pause_before_reset=args.pause_before_reset,
-        pause_after_reset=args.pause_after_reset
-        )
+        pause_after_reset=args.pause_after_reset)
     
     episode_length_step = int(args.episode_length_time / args.dt)
     env = WrappedEnv(env, 
                      episode_max_steps=episode_length_step,
                      is_min_time=True,
                      reward_penalty=args.reset_penalty_steps * args.reward,
-                     steps_penalty=args.reset_penalty_steps)
+                     steps_penalty=args.reset_penalty_steps,
+                     start_step = args.start_step,
+                     start_episode = args.start_episode)
     
     set_seed_everywhere(seed=args.seed)
     env.start()
@@ -208,10 +202,11 @@ def main(seed=-1):
         agent = AsyncSACRADAgent(args)
 
     task_start_time = time.time()
+    task_timeout_time = task_start_time + (args.timeout_mins * 60)
     update_paused = True
     (image, proprioception) = env.reset()
 
-    while env.total_steps < args.env_steps:
+    while env.total_steps <= args.env_steps:
         t1 = time.time()
         action = agent.sample_actions((image, proprioception))
         t2 = time.time()
@@ -230,11 +225,15 @@ def main(seed=-1):
             elapsed_time = "{:.3f}".format(time.time() - task_start_time)
             print(f'> Episode {episode} done. ' + 
                   f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s,' + 
-                  f'Battery charge: {charge}')
+                  f' Battery charge: {charge}')
             
             info['tag'] = 'train'
             info['dump'] = True
             L.push(info)
+
+            if charge < args.min_charge:
+                agent.pause_update()
+                update_paused = True
 
             (image, proprioception) = env.reset()
 
@@ -242,28 +241,36 @@ def main(seed=-1):
             if rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:
                 break
 
-            if update_paused and env.total_steps >= args.init_steps:
+            if update_paused and env.total_steps >= args.init_steps \
+                and charge > args.min_charge:
                 agent.resume_update()
                 update_paused = False
-                time.sleep(25)
+                time.sleep(20)
 
         if not done and 'TimeLimit.truncated' in info:
             episode = info['episode']
             sub_epi = info['sub_episode']
+            charge = info['battery_charge']
             elapsed_time = "{:.3f}".format(time.time() - task_start_time)
             print(f'> Episode {episode}, sub-episode {sub_epi} done. ' + 
-                  f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s')
+                  f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s'+ 
+                  f' Battery charge: {charge}')
             
             rf = get_run_flag()
             if rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:
                 break
             
+            if charge < args.min_charge:
+                agent.pause_update()
+                update_paused = True
+
             (image, proprioception) = env.reset(reset_stats=False)
 
-            if update_paused and env.total_steps >= args.init_steps:
+            if update_paused and env.total_steps >= args.init_steps \
+                and charge > args.min_charge:
                 agent.resume_update()
                 update_paused = False
-                time.sleep(25)
+                time.sleep(20)
 
         if not update_paused and env.total_steps >= args.init_steps:
             update_infos = agent.update()
@@ -282,10 +289,6 @@ def main(seed=-1):
         if args.save_model and env.total_steps % args.save_model_freq == 0 and \
             env.total_steps < args.env_steps:
             agent.checkpoint(env.total_steps)
-
-        # if env.total_steps >= curriculum[curriculum_idx][0]:
-        #     env.set_min_target_size(curriculum[curriculum_idx][1])
-        #     curriculum_idx += 1
 
     agent.pause_update()
     env.close()

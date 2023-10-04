@@ -69,9 +69,9 @@ class RadReplayBuffer():
                 (self._capacity, *self._action_shape), dtype=np.float32)
             
             self._rewards = np.empty((self._capacity), dtype=np.float32)
-            self._dones = np.empty((self._capacity), dtype=np.float32)
+            self._masks = np.empty((self._capacity), dtype=np.float32)
 
-    def add(self, image, propri, action, reward, next_image, next_propri, done):
+    def add(self, image, propri, action, reward, next_image, next_propri, mask):
         if not self._ignore_image:
             self._images[self._idx] = image
             self._next_images[self._idx] = next_image
@@ -80,7 +80,7 @@ class RadReplayBuffer():
             self._next_propris[self._idx] = next_propri
         self._actions[self._idx] = action
         self._rewards[self._idx] = reward
-        self._dones[self._idx] = done
+        self._masks[self._idx] = mask
 
         self._idx = (self._idx + 1) % self._capacity
         self._full = self._full or self._idx == 0
@@ -107,10 +107,10 @@ class RadReplayBuffer():
 
         actions = self._actions[idxs]
         rewards = self._rewards[idxs]
-        dones = self._dones[idxs]
+        masks = self._masks[idxs]
 
         return Batch(images=images, proprioceptions=propris,
-                     actions=actions, rewards=rewards, masks=dones,
+                     actions=actions, rewards=rewards, masks=masks,
                      next_images=next_images, next_proprioceptions=next_propris)
 
 
@@ -141,7 +141,7 @@ class RadReplayBuffer():
 
             np.save(os.path.join(save_path, "actions.npy"), self._actions)
             np.save(os.path.join(save_path, "rewards.npy"), self._rewards)
-            np.save(os.path.join(save_path, "dones.npy"), self._dones)
+            np.save(os.path.join(save_path, "masks.npy"), self._masks)
 
         print("Saved the buffer locally,", end=' ')
         print("took: {:.3f}s.".format(time.time() - tic))
@@ -170,7 +170,7 @@ class RadReplayBuffer():
 
         self._actions = np.load(os.path.join(self._load_path, "actions.npy"))
         self._rewards = np.load(os.path.join(self._load_path, "rewards.npy"))
-        self._dones = np.load(os.path.join(self._load_path, "dones.npy"))
+        self._masks = np.load(os.path.join(self._load_path, "masks.npy"))
 
         print("Loaded the buffer from: {}".format(self._load_path), end=' ')
         print("Took: {:.3f}s".format(time.time() - tic))
@@ -297,18 +297,18 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
         action_size = np.random.uniform(
             size=(batch_size, *self._action_shape)).astype(np.float32).nbytes
         
-        done_size = np.random.uniform(
+        mask_size = np.random.uniform(
             size=(batch_size,)).astype(np.float32).nbytes
         
         reward_size = np.random.uniform(
             size=(batch_size,)).astype(np.float32).nbytes
 
         return image_size, proprioception_size, action_size, \
-                done_size, reward_size
+                mask_size, reward_size
 
     def _get_sm_batch(self, sizes):        
         image_size, proprioception_size, action_size, \
-            done_size, reward_size = sizes
+            mask_size, reward_size = sizes
         
         images = None
         next_images = None
@@ -343,18 +343,18 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
 
 
         action_mem = shared_memory.SharedMemory(create=True, size=action_size)
-        done_mem = shared_memory.SharedMemory(create=True, size=done_size)
+        mask_mem = shared_memory.SharedMemory(create=True, size=mask_size)
         reward_mem = shared_memory.SharedMemory(create=True, size=reward_size)
 
         actions = np.ndarray((self._batch_size, *self._action_shape), 
                              dtype=np.float32, buffer=action_mem.buf)
-        dones = np.ndarray((self._batch_size,), dtype=np.float32, 
-                           buffer=done_mem.buf)
+        masks = np.ndarray((self._batch_size,), dtype=np.float32, 
+                           buffer=mask_mem.buf)
         rewards = np.ndarray((self._batch_size,), dtype=np.float32, 
                              buffer=reward_mem.buf)
         
         batch = Batch(images=images, proprioceptions=propris,
-                      actions=actions, rewards=rewards, masks=dones,
+                      actions=actions, rewards=rewards, masks=masks,
                       next_images=next_images, next_proprioceptions=next_propris)
         
         mem_names = {}
@@ -365,11 +365,11 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
             mem_names['proprioception_mem'] = proprioception_mem.name
             mem_names['next_proprioception_mem'] = next_proprioception_mem.name
         mem_names['action_mem'] = action_mem.name
-        mem_names['done_mem'] = done_mem.name
+        mem_names['mask_mem'] = mask_mem.name
         mem_names['reward_mem'] = reward_mem.name
         
         mems = (img_mem, next_img_mem,  proprioception_mem, 
-                next_proprioception_mem, action_mem, done_mem, reward_mem)
+                next_proprioception_mem, action_mem, mask_mem, reward_mem)
 
         return batch, mems, mem_names
     
@@ -422,24 +422,24 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
 
         action_mem = shared_memory.SharedMemory(
             name=mem_names['action_mem'])
-        done_mem = shared_memory.SharedMemory(
-            name=mem_names['done_mem'])
+        mask_mem = shared_memory.SharedMemory(
+            name=mem_names['mask_mem'])
         reward_mem = shared_memory.SharedMemory(
             name=mem_names['reward_mem'])
         
         actions = np.ndarray((self._batch_size, *self._action_shape), 
                              dtype=np.float32, buffer=action_mem.buf)
-        dones = np.ndarray((self._batch_size,), dtype=np.float32, 
-                           buffer=done_mem.buf)
+        masks = np.ndarray((self._batch_size,), dtype=np.float32, 
+                           buffer=mask_mem.buf)
         rewards = np.ndarray((self._batch_size,), dtype=np.float32, 
                              buffer=reward_mem.buf)
         
         batch = Batch(images=images, proprioceptions=propris,
-                      actions=actions, rewards=rewards, masks=dones,
+                      actions=actions, rewards=rewards, masks=masks,
                       next_images=next_images, next_proprioceptions=next_propris)
               
         mems = (img_mem, next_img_mem,  proprioception_mem, 
-                next_proprioception_mem, action_mem, done_mem, reward_mem)
+                next_proprioception_mem, action_mem, mask_mem, reward_mem)
 
         return batch, mems
 

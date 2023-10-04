@@ -25,17 +25,17 @@ class SpatialSoftmax(nn.Module):
       self._pos_x = pos_x.reshape(self.height*self.width)
       self._pos_y = pos_y.reshape(self.height*self.width)
 
-      self._temperature = self.param(
-          'temperature', 
-          nn.initializers.constant(self.temp), (1,)) 
+    #   self._temperature = self.param(
+    #       'temperature', 
+    #       nn.initializers.constant(self.temp), (1,)) 
 
     @nn.compact
     def __call__(self, feature):  
         feature = feature.transpose(0, 3, 1, 2)
         feature = feature.reshape(-1, self.height*self.width)
 
-        feature = feature/self._temperature
-        
+        # feature = feature/self._temperature
+    
         softmax_attention = nn.activation.softmax(feature, axis = -1)
 
         expected_x = jnp.sum(self._pos_x*softmax_attention, axis = 1, 

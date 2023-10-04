@@ -95,11 +95,16 @@ class WrappedEnv(Env):
     def __init__(
             self,
             env,
-            episode_max_steps=0,
+            episode_max_steps=-1,
             is_min_time=False,
             reward_scale=1.0,
             reward_penalty=0,
-            steps_penalty=0):
+            steps_penalty=0,
+            start_step=0,
+            start_episode=0):
+        
+        if is_min_time:
+            assert episode_max_steps > 0
         
         self._wrapped_env = env
         self._episode_max_steps = episode_max_steps
@@ -109,8 +114,8 @@ class WrappedEnv(Env):
         self._steps_penalty = steps_penalty
         self._spec = EnvSpec(env.spec, self.observation_space, self.action_space)
 
-        self._total_steps  = 0
-        self._episode = 0
+        self._total_steps  = start_step
+        self._episode = start_episode
 
     def _reset_stats(self):
         self._reward_sum = 0
@@ -125,18 +130,23 @@ class WrappedEnv(Env):
         self._episode_steps += 1
         self._total_steps += 1 
 
-        if not self._is_min_time and \
-            self._episode_steps == self._episode_max_steps:
-            info['TimeLimit.truncated'] = True 
+        new_info = {}
 
-        if done or (not self._is_min_time and 'TimeLimit.truncated' in info):
+        if not self._is_min_time and self._episode_max_steps > 0 \
+            and self._episode_steps == self._episode_max_steps:
+            new_info['TimeLimit.truncated'] = True
+
+        if 'TimeLimit.truncated' in info:
+            new_info['TimeLimit.truncated'] = True
+
+        if done or (not self._is_min_time and 'TimeLimit.truncated' in new_info):
+            new_info['episode'] = self._episode
+            new_info['step'] = self._total_steps
+            new_info['episode_steps'] = self._episode_steps
+            new_info['duration'] = time.time() - self._start_time
+            new_info['return'] = self._reward_sum
             self._episode += 1
-            info['episode'] = self._episode
-            info['step'] = self._total_steps
-            info['episode_steps'] = self._episode_steps
-            info['duration'] = time.time() - self._start_time
-            info['return'] = self._reward_sum
-            return done, info
+            return done, new_info
         
         if self._is_min_time:
             self._sub_episode_steps += 1
@@ -145,14 +155,14 @@ class WrappedEnv(Env):
                 self._total_steps += self._steps_penalty
                 self._episode_steps += self._steps_penalty
                 self._sub_episode += 1
-                info['TimeLimit.truncated'] = True
-                info['episode'] = self._episode
-                info['sub_episode'] = self._sub_episode
-                info['sub_episode_steps '] = self._sub_episode_steps 
+                new_info['TimeLimit.truncated'] = True
+                new_info['episode'] = self._episode
+                new_info['sub_episode'] = self._sub_episode
+                new_info['sub_episode_steps'] = self._sub_episode_steps 
                 self._sub_episode_steps = 0
-                return done, info
+                return done, new_info
         
-        return done, info
+        return done, new_info
 
     def reset(self, reset_stats=True):
         ret = self._wrapped_env.reset()
