@@ -156,7 +156,7 @@ class BaseAgent:
         return [info]
 
     def _load_model_fnc(self):
-        model_dir = f'{self._model_dir}{self._load_model}'
+        model_dir = os.path.join(self._model_dir, str(self._load_model)) 
         assert os.path.exists(model_dir)
         ckpt = {
             'critic': self._critic,
@@ -177,7 +177,7 @@ class BaseAgent:
 
     def _save_model_fnc(self, step):
         print(f'Saving model, steps: {step}.')
-        model_dir = f'{self._model_dir}{step}'
+        model_dir = os.path.join(self._model_dir, str(step)) 
         if os.path.exists(model_dir):
             shutil.rmtree(model_dir)
 

@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument('--dt', default=0.045, type=float)
     parser.add_argument('--min_target_size', default=0.2, type=float)
     parser.add_argument('--reset_penalty_steps', default=67, type=int)
-    parser.add_argument('--min_charge', default=1010, type=int)
+    parser.add_argument('--min_charge', default=910, type=int)
     parser.add_argument('--reward', default=-1, type=float)
     parser.add_argument('--pause_before_reset', default=0, type=float)
     parser.add_argument('--pause_after_reset', default=0, type=float)
@@ -71,12 +71,12 @@ def parse_args():
     parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=3e-4, type=float)
+    parser.add_argument('--critic_lr', default=1e-3, type=float)
     parser.add_argument('--critic_tau', default=0.01, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=3e-4, type=float)
+    parser.add_argument('--actor_lr', default=1e-3, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--use_critic_encoder', default=True, 
                         action='store_true')
@@ -95,13 +95,13 @@ def parse_args():
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
     parser.add_argument('--xtick', default=1000, type=int)
-    parser.add_argument('--save_wandb', default=False, action='store_true')
+    parser.add_argument('--save_wandb', default=True, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--save_model_freq', default=20000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
-    parser.add_argument('--start_step', default=1, type=int)
-    parser.add_argument('--start_episode', default=1, type=int)
+    parser.add_argument('--start_step', default=0, type=int)
+    parser.add_argument('--start_episode', default=0, type=int)
 
     parser.add_argument('--buffer_save_path', default='./buffers/', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
@@ -154,16 +154,17 @@ def main(seed=-1):
     if args.buffer_save_path:
         make_dir(args.buffer_save_path)
 
-    args.model_dir = f'{args.work_dir}/checkpoints/'
+    args.model_dir = os.path.join(args.work_dir, 'checkpoints') 
+    args.net_params = config
 
     if args.save_wandb:
         wandb_project_name = f'{args.name}'
         wandb_run_name=f'seed_{args.seed}'
-        L = Logger(args.work_dir, args.xtick, args.save_tensorboard, 
+        L = Logger(args.work_dir, args.xtick, vars(args), args.save_tensorboard, 
                    args.save_wandb, wandb_project_name, wandb_run_name, 
-                   vars(args), args.start_step > 1)
+                   args.start_step > 1)
     else:
-        L = Logger(args.work_dir, args.xtick, args.save_tensorboard, 
+        L = Logger(args.work_dir, args.xtick, vars(args), args.save_tensorboard, 
                    args.save_wandb)
 
     image_shape = (args.image_height, args.image_width, 3*args.stack_frames)
@@ -192,7 +193,6 @@ def main(seed=-1):
     args.image_shape = env.image_space.shape
     args.proprioception_shape = env.observation_space.shape
     args.action_shape = env.action_space.shape
-    args.net_params = config
     args.env_action_space = env.action_space
 
     if args.sync_mode:

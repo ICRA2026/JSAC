@@ -127,18 +127,18 @@ class MetersGroup(object):
 
 
 class Logger(object):
-    def __init__(self, log_dir, xtick=0, use_tb=False, use_wandb=False,
-                 wandb_project_name='', wandb_run_name='', wandb_args=None, 
+    def __init__(self, log_dir, xtick, args, use_tb=False, 
+                 use_wandb=False, wandb_project_name='', wandb_run_name='', 
                  wandb_resume=False, config='rl'):
         
         self._log_queue = Queue()
         self._log_dir = log_dir
         self._xtick = xtick
+        self._args = args
         self._use_tb = use_tb
         self._use_wandb = use_wandb
         self._wandb_project_name = wandb_project_name
         self._wandb_run_name = wandb_run_name
-        self._wandb_args = wandb_args
         self._wandb_resume = wandb_resume
         self._config = config
 
@@ -176,7 +176,7 @@ class Logger(object):
                 project=self._wandb_project_name,
                 name=self._wandb_run_name,
                 id=id,
-                config=self._wandb_args,
+                config=self._args,
                 resume=self._wandb_resume
             )
         else:
@@ -193,7 +193,15 @@ class Logger(object):
                     self._returns.append(dict['return'])
                     self._episode_steps.append(dict['episode_steps'])
 
-        self._plot_path = self._log_dir + 'learning_curve.png'
+        start_step = self._args['start_step']
+        config_name = f'config_{start_step}.txt'
+        config_path = os.path.join(self._log_dir, config_name) 
+        with open(config_path, 'w') as cfl:
+            for key, value in self._args.items():
+                cfl.write(f'{key} -> {value}')
+                cfl.write('\n\n')
+
+        self._plot_path = os.path.join(self._log_dir, 'learning_curve') 
 
     def _run(self):
         self._init()
