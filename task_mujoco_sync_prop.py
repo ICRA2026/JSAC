@@ -12,7 +12,6 @@ from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
-import tqdm
 import jaxlib
 import argparse
 import multiprocessing as mp
@@ -82,16 +81,17 @@ def parse_args():
     # misc
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, action='store_true')
-    parser.add_argument('--xtick', default=300, type=int)
+    parser.add_argument('--xtick', default=500, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=False, action='store_true')
-    parser.add_argument('--save_model_freq', default=5000, type=int)
+    parser.add_argument('--save_model_freq', default=10000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
-    parser.add_argument('--start_step', default=1, type=int)
+    parser.add_argument('--start_step', default=0, type=int)
+    parser.add_argument('--start_episode', default=0, type=int)
 
-    parser.add_argument('--buffer_save_path', default='', type=str)
-    parser.add_argument('--buffer_load_path', default='', type=str)
+    parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
+    parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 
     args = parser.parse_args()
     return args
@@ -206,7 +206,7 @@ def main(seed=-1):
             agent.checkpoint(env.total_steps)
 
     if args.save_model:
-        agent.checkpoint(args.env_steps)
+        agent.checkpoint(env.total_steps)
     L.plot()
     L.close()
 

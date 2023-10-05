@@ -6,13 +6,12 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
 # os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
-from jsac.envs.mujoco_visual_env import MujocoVisualEnv
+from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
-import tqdm
 import jaxlib
 import argparse
 import shutil
@@ -81,16 +80,17 @@ def parse_args():
     # misc
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, action='store_true')
-    parser.add_argument('--xtick', default=300, type=int)
+    parser.add_argument('--xtick', default=500, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=False, action='store_true')
     parser.add_argument('--save_model_freq', default=10000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
-    parser.add_argument('--start_step', default=1, type=int)
+    parser.add_argument('--start_step', default=0, type=int)
+    parser.add_argument('--start_episode', default=0, type=int)
 
-    parser.add_argument('--buffer_save_path', default='', type=str)
-    parser.add_argument('--buffer_load_path', default='', type=str)
+    parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
+    parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 
     args = parser.parse_args()
     return args
@@ -126,47 +126,46 @@ def main(seed=-1):
 
     args.model_dir = f'{args.work_dir}/checkpoints/'
 
+    args.model_dir = os.path.join(args.work_dir, 'checkpoints') 
+    args.net_params = config
+
     if args.save_wandb:
         wandb_project_name = f'{args.name}'
         wandb_run_name=f'seed_{args.seed}'
-        L = Logger(args.work_dir, args.xtick, args.save_tensorboard, 
-                   args.save_wandb, wandb_project_name, wandb_run_name, 
-                   vars(args), args.start_step > 1)
+        L = Logger(args.work_dir, args.xtick, vars(args), 
+                   args.save_tensorboard, args.save_wandb, wandb_project_name, 
+                   wandb_run_name, args.start_step > 1)
     else:
-        L = Logger(args.work_dir, args.xtick, args.save_tensorboard, 
-                   args.save_wandb)
+        L = Logger(args.work_dir, args.xtick, vars(args), 
+                   args.save_tensorboard, args.save_wandb)
 
-    img_save_path = f'{args.work_dir}/imgs' 
     env = MujocoVisualEnv(
-        args.env_name, True, args.seed, args.stack_frames, args.image_width, 
-        args.image_height, img_save_path=img_save_path)
+        args.env_name, args.mode, args.seed, args.stack_frames, args.image_width, 
+        args.image_height)
+    
+    env = WrappedEnv(env, start_step=args.start_step, 
+                     start_episode=args.start_episode)
 
     set_seed_everywhere(seed=args.seed)
 
     args.image_shape = env.image_space.shape
     args.proprioception_shape = env.proprioception_space.shape
     args.action_shape = env.action_space.shape
-    args.net_params = config
     args.env_action_space = env.action_space
 
-    image, proprioception = env.reset()
     if args.sync_mode:
         agent = SACRADAgent(args)
     else:
         agent = AsyncSACRADAgent(args)
 
     task_start_time = time.time()
+    image, proprioception = env.reset()
     
-    for step in tqdm.tqdm(range(args.start_step, args.env_steps + 1), 
-                          smoothing=0.1, disable=not args.tqdm):
+    while env.total_steps < args.env_steps:
         t1 = time.time()
-        if step < args.init_steps:
-            action = env.action_space.sample()
-        else:
-            action = agent.sample_actions((image, proprioception))
-
+        action = agent.sample_actions((image, proprioception))
         t2 = time.time()
-        next_image, next_proprioception, reward, done, info = env.step(action)
+        (next_image, next_proprioception), reward, done, info = env.step(action)
         t3 = time.time()
 
         if not done or 'TimeLimit.truncated' in info:
@@ -182,46 +181,34 @@ def main(seed=-1):
 
         if done:
             image, proprioception = env.reset()
-            done = False
+            info['tag'] = 'train'
+            info['dump'] = True
+            info['elapsed_time'] = time.time() - task_start_time
+            L.push(info)
 
-            log_data = info['episode']
-            log_data['tag'] = 'train'
-            log_data['dump'] = True
-            log_data['step'] = step
-
-            L.push(log_data)
-
-        if step >= args.init_steps:
+        if env.total_steps >= args.init_steps:
             update_infos = agent.update()
             if update_infos is not None:
                 for update_info in update_infos:
-                    update_info['inference_time'] = (t2 - t1) * 1000
-                    update_info['env_step_time'] = (t3 - t2) * 1000
+                    update_info['action_sample_time'] = (t2 - t1) * 1000
+                    update_info['env_time'] = (t3 - t2) * 1000
+                    update_info['step'] = env.total_steps
                     update_info['tag'] = 'train'
                     update_info['dump'] = False
-                    update_info['step'] = step
 
                     L.push(update_info)
 
-        if step % args.xtick == 0:
+        if env.total_steps % args.xtick == 0:
             L.plot()
 
-        if args.save_model and step % args.save_model_freq == 0 and \
-            step < args.env_steps:
-            agent.checkpoint(step)
+        if args.save_model and env.total_steps % args.save_model_freq == 0 and \
+            env.total_steps < args.env_steps:
+            agent.checkpoint(env.total_steps)
 
     if args.save_model:
-        agent.checkpoint(args.env_steps)
+        agent.checkpoint(env.total_steps)
     L.plot()
     L.close()
-
-    for i in range(2):
-        image, proprioception = env.reset(save_img=True)
-        done=False
-        while not done:
-            action = agent.sample_actions((image, proprioception), 
-                                          deterministic=True)
-            image, proprioception, reward, done, info = env.step(action)
 
     agent.close()
 

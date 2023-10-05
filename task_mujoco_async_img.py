@@ -12,7 +12,6 @@ from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
-import tqdm
 import argparse
 import shutil
 import multiprocessing as mp
@@ -83,14 +82,14 @@ def parse_args():
     parser.add_argument('--xtick', default=500, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
-    parser.add_argument('--save_model', default=True, action='store_true')
+    parser.add_argument('--save_model', default=False, action='store_true')
     parser.add_argument('--save_model_freq', default=10000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
 
-    parser.add_argument('--buffer_save_path', default='./buffers/', type=str)
-    parser.add_argument('--buffer_load_path', default='', type=str)
+    parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
+    parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 
     args = parser.parse_args()
     return args
