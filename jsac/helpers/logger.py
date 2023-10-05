@@ -25,7 +25,7 @@ FORMAT_CONFIG = {
             ('num_updates', 'NU', 'int'),
             ('update_time', 'UT', 'float'),
             ('action_sample_time', 'AST', 'float'), 
-            ('env_time', 'ENT', 'float'),
+            ('env_time', 'ENVT', 'float'),
             ('elapsed_time', 'ELT', 'float'),
             ('battery_charge', 'BC', 'int')
         ],
