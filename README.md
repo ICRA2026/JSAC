@@ -54,7 +54,7 @@ pip3 install optax==0.1.5
 ```
 
 #### Install Mujoco 
-Download [.mujoco](https://drive.google.com/drive/folders/1d1ZoQsR65EWWjmUa_K6ib4bk8AlyxEls?usp=drive_link) folder and save it at the _home_ directory.
+Download [.mujoco_orin.zip](https://drive.google.com/drive/folders/1d1ZoQsR65EWWjmUa_K6ib4bk8AlyxEls?usp=drive_link), unzip and save .mujoco folder at the _home_ directory.
 Edit ~/.bashrc to include Mujoco in $LD_LIBRARY_PATH. ([Reference](https://drive.google.com/file/d/1cZRVREH0HuVIQDLhRcKHvPAjzXw6y5ZR/view?usp=drive_link)).  
 Install the required libraries: 
 ```
