@@ -132,6 +132,9 @@ class WrappedEnv(Env):
 
         new_info = {}
 
+        if 'battery_charge' in info:
+            new_info['battery_charge'] = info['battery_charge']
+
         if not self._is_min_time and self._episode_max_steps > 0 \
             and self._episode_steps == self._episode_max_steps:
             new_info['TimeLimit.truncated'] = True
@@ -154,12 +157,13 @@ class WrappedEnv(Env):
                 self._reward_sum += self._reward_penalty
                 self._total_steps += self._steps_penalty
                 self._episode_steps += self._steps_penalty
-                self._sub_episode += 1
+                
                 new_info['TimeLimit.truncated'] = True
                 new_info['episode'] = self._episode
                 new_info['sub_episode'] = self._sub_episode
                 new_info['sub_episode_steps'] = self._sub_episode_steps 
                 self._sub_episode_steps = 0
+                self._sub_episode += 1
                 return done, new_info
         
         return done, new_info

@@ -32,14 +32,14 @@ config = {
     
     'latent': 50,
 
-    'mlp': [512, 512],
+    'mlp': [256, 256],
 }
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='create2_orin_visual_back_reacher', type=str)
-    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--name', default='create2_orin_visual_back_reacher_256_3e4', type=str)
+    parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
@@ -71,12 +71,12 @@ def parse_args():
     parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=1e-3, type=float)
+    parser.add_argument('--critic_lr', default=3e-4, type=float)
     parser.add_argument('--critic_tau', default=0.01, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=1e-3, type=float)
+    parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--use_critic_encoder', default=True, 
                         action='store_true')
@@ -95,7 +95,7 @@ def parse_args():
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
     parser.add_argument('--xtick', default=1000, type=int)
-    parser.add_argument('--save_wandb', default=True, action='store_true')
+    parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--save_model_freq', default=20000, type=int)
