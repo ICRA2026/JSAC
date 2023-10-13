@@ -6,9 +6,11 @@ from flax.core.frozen_dict import freeze
 def critic_update(rng, actor, critic, critic_target, temp, batch, discount):
 
     rng, key = random.split(rng)
-    _, next_actions, next_log_probs, _ = actor.apply_fn(
-        {"params": actor.params}, batch.next_images, batch.next_proprioceptions,
-        False, key)  
+
+    dist = actor.apply_fn({"params": actor.params}, batch.next_images, 
+                          batch.next_proprioceptions, False)  
+    next_actions = dist.sample(seed=key)
+    next_log_probs = dist.log_prob(next_actions)
 
     target_Q1, target_Q2 = critic_target.apply_fn(
         {"params": critic_target.params}, batch.next_images, 
@@ -43,9 +45,10 @@ def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
     rng, key = random.split(rng)
 
     def actor_loss_fn(actor_params):    
-        _, actions, log_probs, _ = actor.apply_fn(
-            {"params": actor_params}, batch.images, batch.proprioceptions,
-            False, key)
+        dist = actor.apply_fn({"params": actor_params}, batch.images, 
+                              batch.proprioceptions, False)
+        actions = dist.sample(seed=key)
+        log_probs = dist.log_prob(actions)
 
         q1, q2 = critic.apply_fn(
             {'params': critic.params}, batch.images, batch.proprioceptions, 

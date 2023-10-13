@@ -32,8 +32,8 @@ def init_inference_actor(rng, init_image_shape, init_proprioception_shape,
     init_image, init_proprioception = get_init_data(
         init_image_shape, init_proprioception_shape, mode)
 
-    rng, key1, key2 = random.split(rng, 3)
-    model.init(key1, init_image, init_proprioception, False, key2)['params']
+    rng, key1 = random.split(rng, 2)
+    model.init(key1, init_image, init_proprioception, False)['params']
 
     return rng, model
 
@@ -46,13 +46,12 @@ def init_actor(rng, critic, learning_rate, init_image_shape,
     model = ActorModel(action_dim=action_dim, net_params=net_params,
                        spatial_softmax=spatial_softmax, mode=mode)
 
-    rng, key1, key2 = random.split(rng, 3)
+    rng, key1 = random.split(rng, 2)
     
     init_image, init_proprioception = get_init_data(
         init_image_shape, init_proprioception_shape, mode)
     
-    params = model.init(key1, init_image, init_proprioception, False, 
-                        key2)['params']
+    params = model.init(key1, init_image, init_proprioception, False)['params']
     
     if use_critic_encoder:
         partition_optimizers = {

@@ -439,8 +439,8 @@ def sample_actions(rng, apply_fn, params, state, mode, apply_rad, rad_height,
     rng, key = random.split(rng)
     image_ob, propri_ob = process_state(state, mode, apply_rad, rad_height,
                                         rad_width)
-    _, actions, _, _ = apply_fn({"params": params}, image_ob, propri_ob,
-                                False, key)
+    dist = apply_fn({"params": params}, image_ob, propri_ob, False)
+    actions = dist.sample(seed=key)
     return rng, jnp.squeeze(actions, 0)
 
 

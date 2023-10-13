@@ -5,9 +5,12 @@ import flax.linen as nn
 import jax.numpy as jnp
 from jax import random
 from jsac.helpers.utils import MODE
+from tensorflow_probability.substrates import jax as tfp
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 
-def default_init(scale: Optional[float] = jnp.sqrt(2)):
+def default_init(scale: Optional[float] = 0.5):
     return nn.initializers.orthogonal(scale)
 
 
@@ -25,16 +28,16 @@ class SpatialSoftmax(nn.Module):
       self._pos_x = pos_x.reshape(self.height*self.width)
       self._pos_y = pos_y.reshape(self.height*self.width)
 
-    #   self._temperature = self.param(
-    #       'temperature', 
-    #       nn.initializers.constant(self.temp), (1,)) 
+      self._temperature = self.param(
+          'temperature', 
+          nn.initializers.constant(self.temp), (1,)) 
 
     @nn.compact
     def __call__(self, feature):  
         feature = feature.transpose(0, 3, 1, 2)
         feature = feature.reshape(-1, self.height*self.width)
 
-        # feature = feature/self._temperature
+        feature = feature/self._temperature
     
         softmax_attention = nn.activation.softmax(feature, axis = -1)
 
@@ -101,8 +104,7 @@ class MLP(nn.Module):
     @nn.compact
     def __call__(self, x):
         for i, size in enumerate(self.hidden_dims):
-            # x = nn.Dense(size, kernel_init=default_init())(x)
-            x = nn.Dense(size)(x)
+            x = nn.Dense(size, kernel_init=default_init())(x)
             if i + 1 < len(self.hidden_dims) or self.activate_final:
                 x = nn.relu(x)
         return x
@@ -141,7 +143,7 @@ class ActorModel(nn.Module):
     final_fc_init_scale: float = 0.0
 
     @nn.compact
-    def __call__(self, images, proprioceptions, deterministic=False, key=None):
+    def __call__(self, images, proprioceptions, deterministic=False):
         
         latents = Encoder(self.net_params, self.spatial_softmax,
                           name='encoder',
@@ -153,27 +155,24 @@ class ActorModel(nn.Module):
                       kernel_init=default_init(self.final_fc_init_scale)
                       )(outputs)
         
-        if deterministic:
-            return nn.tanh(mu)
+
 
         log_std = nn.Dense(self.action_dim, 
                            kernel_init=default_init(self.final_fc_init_scale)
                            )(outputs)
 
-        log_std = nn.tanh(log_std)
-        log_std = LOG_STD_MIN + 0.5 * (
-            LOG_STD_MAX - LOG_STD_MIN
-        ) * (log_std + 1)
+        ## From https://github.com/ikostrikov/jaxrl
+        means = nn.tanh(mu)
+        if deterministic:
+            return means
 
-        std = jnp.exp(log_std)
-        noise = random.normal(key, mu.shape)
-        pi = mu + noise * std
+        log_std = jnp.clip(log_std, LOG_STD_MIN, LOG_STD_MAX)
 
-        log_pi = gaussian_logprob(noise, log_std)
+        base_dist = tfd.MultivariateNormalDiag(loc=means,
+                                               scale_diag=jnp.exp(log_std))
 
-        mu, pi, log_pi = squash(mu, pi, log_pi)
-        log_pi = jnp.squeeze(log_pi, -1)
-        return mu, pi, log_pi, log_std
+        return tfd.TransformedDistribution(distribution=base_dist,
+                                               bijector=tfb.Tanh())
     
     def __hash__(self): 
         return id(self)
