@@ -10,7 +10,7 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 
-def default_init(scale: Optional[float] = 0.5):
+def default_init(scale: Optional[float] = 1.0):
     return nn.initializers.orthogonal(scale)
 
 

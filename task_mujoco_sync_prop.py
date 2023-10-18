@@ -35,7 +35,7 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='hopper_sync_prop', type=str)
+    parser.add_argument('--name', default='hopper_sync_prop_R3', type=str)
     parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
@@ -59,18 +59,17 @@ def parse_args():
     # parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=5e-4, type=float)
-    parser.add_argument('--critic_tau', default=0.01, type=float)
+    parser.add_argument('--critic_lr', default=1e-4, type=float)
+    parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
     parser.add_argument('--actor_lr', default=1e-4, type=float)
-    parser.add_argument('--actor_update_freq', default=1, type=int)
+    parser.add_argument('--actor_update_freq', default=2, type=int)
     # parser.add_argument('--use_critic_encoder', default=True, 
     #                     action='store_true')
     
     # encoder
-    parser.add_argument('--encoder_tau', default=0.05, type=float)
     # parser.add_argument('--spatial_softmax', default=True, action='store_true')
     
     # sac
@@ -219,10 +218,10 @@ def main(seed=-1):
 if __name__ == '__main__':
     mp.set_start_method('spawn')
 
-    # for i in range(10):
-    #     main(i)
+    for i in range(15):
+        main(i)
 
-    main()
+    # main()
 
 
 
