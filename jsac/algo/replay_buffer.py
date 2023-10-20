@@ -502,10 +502,16 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
         with self._lock:
             for mem in self._batch0mem:
                 if mem is not None:
-                    mem.close()
+                    try:
+                        mem.close()
+                    except:
+                        pass
             for mem in self._batch1mem:
                 if mem is not None:
-                    mem.close()
+                    try:
+                        mem.close()
+                    except:
+                        pass
 
         
     def save(self, save_path):
@@ -521,10 +527,16 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
 
         for mem in self._batch0mem:
             if mem is not None:
-                mem.close()
-                mem.unlink()
+                try:
+                    mem.close()
+                    mem.unlink()
+                except:
+                    pass
         for mem in self._batch1mem:
             if mem is not None:
-                mem.close()
-                mem.unlink()
+                try:
+                    mem.close()
+                    mem.unlink()
+                except:
+                    pass
 
