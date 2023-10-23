@@ -176,47 +176,6 @@ class RadReplayBuffer():
         print("Took: {:.3f}s".format(time.time() - tic))
 
 
-# class AsyncRadReplayBuffer(RadReplayBuffer):
-#     def __init__(
-#             self, image_shape, proprioception_shape, action_shape, capacity, 
-#             batch_size, obs_queue, init_steps, init_buffers=True, load_path='', 
-#             recv_obs=True):
-#         super().__init__(
-#             image_shape, proprioception_shape, action_shape, capacity,
-#             batch_size, init_buffers, load_path)
-
-#         self._init_steps = init_steps
-#         self._obs_queue = obs_queue
-#         self._pause_update = False
-
-#         if recv_obs:
-#             threading.Thread(target=self._recv_obs).start()
-
-#     def _recv_obs(self):
-#         while True:
-#             observation = self._obs_queue.get()
-#             if isinstance(observation, str):
-#                 if observation == 'pause':
-#                     self._pause_update = True
-#                     print('pause update')
-#                 elif observation == 'resume':
-#                     self._pause_update = False
-#                     print('resume update')                
-#                 else:
-#                     raise NotImplementedError()
-#             else:
-#                 with self._lock:
-#                     self.add(*observation)
-
-#     def sample(self):
-#         while True:
-#             if self._pause_update or self._steps < self._init_steps:
-#                 time.sleep(0.1)
-#             else:
-#                 with self._lock:
-#                     return super().sample()
-
-
 class AsyncSMRadReplayBuffer(RadReplayBuffer):
     def __init__(self, image_shape, proprioception_shape, action_shape, 
                  capacity, batch_size, obs_queue, init_steps, load_path=''):

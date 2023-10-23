@@ -5,12 +5,17 @@ import flax.linen as nn
 import jax.numpy as jnp
 from jax import random
 from jsac.helpers.utils import MODE
-from tensorflow_probability.substrates import jax as tfp
-tfd = tfp.distributions
-tfb = tfp.bijectors
+import distrax
+
+# from tensorflow_probability.substrates import jax as tfp
+# tfd = tfp.distributions
+# tfb = tfp.bijectors
 
 
-def default_init(scale: Optional[float] = 1.0):
+# def default_init(scale: Optional[float] = 1.0):
+#     return nn.initializers.orthogonal(scale)
+
+def default_init(scale: float = jnp.sqrt(2)):
     return nn.initializers.orthogonal(scale)
 
 
@@ -110,37 +115,124 @@ class MLP(nn.Module):
         return x
 
 
-LOG_STD_MIN = -10.0
-LOG_STD_MAX = 10.0
+LOG_STD_MIN = -20.0
+LOG_STD_MAX = 2.0
 
 
-def gaussian_logprob(noise, log_std):
-    """Compute Gaussian log probability."""
-    residual = (-0.5 * jnp.power(noise, 2) - \
-                log_std).sum(-1, keepdims=True)
-    return residual - 0.5 * jnp.log(2 * jnp.pi) * \
-        noise.shape[-1]
+# def gaussian_logprob(noise, log_std):
+#     """Compute Gaussian log probability."""
+#     residual = (-0.5 * jnp.power(noise, 2) - \
+#                 log_std).sum(-1, keepdims=True)
+#     return residual - 0.5 * jnp.log(2 * jnp.pi) * \
+#         noise.shape[-1]
 
 
-def squash(mu, pi, log_pi):
-    """Apply squashing function.
-    See appendix C from https://arxiv.org/pdf/1812.05905.pdf.
-    """
-    mu = nn.tanh(mu)
-    if pi is not None:
-        pi = nn.tanh(pi)
-    if log_pi is not None:
-        log_pi -= jnp.log(nn.relu(1 - jnp.power(pi, 2)) + \
-                          1e-6).sum(-1, keepdims=True)
-    return mu, pi, log_pi
+# def squash(mu, pi, log_pi):
+#     """Apply squashing function.
+#     See appendix C from https://arxiv.org/pdf/1812.05905.pdf.
+#     """
+#     mu = nn.tanh(mu)
+#     if pi is not None:
+#         pi = nn.tanh(pi)
+#     if log_pi is not None:
+#         log_pi -= jnp.log(nn.relu(1 - jnp.power(pi, 2)) + \
+#                           1e-6).sum(-1, keepdims=True)
+#     return mu, pi, log_pi
 
+
+# class ActorModel(nn.Module):
+#     action_dim: int
+#     net_params: dict 
+#     spatial_softmax: bool = True
+#     mode: str = MODE.IMG_PROP
+#     final_fc_init_scale: float = 0.0
+
+#     @nn.compact
+#     def __call__(self, images, proprioceptions, deterministic=False):
+        
+#         latents = Encoder(self.net_params, self.spatial_softmax,
+#                           name='encoder',
+#                           mode=self.mode)(images, proprioceptions)
+        
+#         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
+
+#         means = nn.Dense(self.action_dim, 
+#                       kernel_init=default_init(self.final_fc_init_scale)
+#                       )(outputs)
+        
+
+
+#         log_stds = nn.Dense(self.action_dim, 
+#                            kernel_init=default_init(self.final_fc_init_scale)
+#                            )(outputs)
+
+       
+#         means = nn.tanh(means)
+#         if deterministic:
+#             return means
+
+#         log_std = jnp.clip(log_stds, LOG_STD_MIN, LOG_STD_MAX)
+
+#         base_dist = tfd.MultivariateNormalDiag(loc=means,
+#                                                scale_diag=jnp.exp(log_std))
+
+#         return tfd.TransformedDistribution(distribution=base_dist,
+#                                                bijector=tfb.Tanh())
+    
+#     def __hash__(self): 
+#         return id(self)
+
+
+class TanhMultivariateNormalDiag(distrax.Transformed):
+    def __init__(
+        self,
+        loc: jnp.ndarray,
+        scale_diag: jnp.ndarray,
+        low: Optional[jnp.ndarray] = None,
+        high: Optional[jnp.ndarray] = None,
+    ):
+        distribution = distrax.MultivariateNormalDiag(loc=loc, 
+                                                      scale_diag=scale_diag)
+
+        layers = []
+
+        if not (low is None or high is None):
+
+            def rescale_from_tanh(x):
+                x = (x + 1) / 2  # (-1, 1) => (0, 1)
+                return x * (high - low) + low
+
+            def forward_log_det_jacobian(x):
+                high_ = jnp.broadcast_to(high, x.shape)
+                low_ = jnp.broadcast_to(low, x.shape)
+                return jnp.sum(jnp.log(0.5 * (high_ - low_)), -1)
+
+            layers.append(
+                distrax.Lambda(
+                    rescale_from_tanh,
+                    forward_log_det_jacobian=forward_log_det_jacobian,
+                    event_ndims_in=1,
+                    event_ndims_out=1,
+                )
+            )
+
+        layers.append(distrax.Block(distrax.Tanh(), 1))
+
+        bijector = distrax.Chain(layers)
+
+        super().__init__(distribution=distribution, bijector=bijector)
+
+    def mode(self) -> jnp.ndarray:
+        return self.bijector.forward(self.distribution.mode())
+    
 
 class ActorModel(nn.Module):
     action_dim: int
     net_params: dict 
     spatial_softmax: bool = True
     mode: str = MODE.IMG_PROP
-    final_fc_init_scale: float = 0.0
+    low: Optional[jnp.ndarray] = None
+    high: Optional[jnp.ndarray] = None
 
     @nn.compact
     def __call__(self, images, proprioceptions, deterministic=False):
@@ -151,32 +243,20 @@ class ActorModel(nn.Module):
         
         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
 
-        mu = nn.Dense(self.action_dim, 
-                      kernel_init=default_init(self.final_fc_init_scale)
-                      )(outputs)
-        
-
-
-        log_std = nn.Dense(self.action_dim, 
-                           kernel_init=default_init(self.final_fc_init_scale)
-                           )(outputs)
-
-        ## From https://github.com/ikostrikov/jaxrl
-        means = nn.tanh(mu)
+        means = nn.Dense(self.action_dim, kernel_init=default_init())(outputs)
+    
         if deterministic:
             return means
 
-        log_std = jnp.clip(log_std, LOG_STD_MIN, LOG_STD_MAX)
+        log_stds = nn.Dense(self.action_dim, kernel_init=default_init())(outputs)
+       
+        log_stds = jnp.clip(log_stds, LOG_STD_MIN, LOG_STD_MAX)
 
-        base_dist = tfd.MultivariateNormalDiag(loc=means,
-                                               scale_diag=jnp.exp(log_std))
-
-        return tfd.TransformedDistribution(distribution=base_dist,
-                                               bijector=tfb.Tanh())
+        return TanhMultivariateNormalDiag(
+            means, jnp.exp(log_stds), self.low, self.high)
     
     def __hash__(self): 
         return id(self)
-
 
 class QFunction(nn.Module):
     hidden_dims: Sequence[int]

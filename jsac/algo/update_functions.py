@@ -9,8 +9,7 @@ def critic_update(rng, actor, critic, critic_target, temp, batch, discount):
 
     dist = actor.apply_fn({"params": actor.params}, batch.next_images, 
                           batch.next_proprioceptions, False)  
-    next_actions = dist.sample(seed=key)
-    next_log_probs = dist.log_prob(next_actions)
+    next_actions, next_log_probs = dist.sample_and_log_prob(seed=key)
 
     target_Q1, target_Q2 = critic_target.apply_fn(
         {"params": critic_target.params}, batch.next_images, 
@@ -47,14 +46,14 @@ def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
     def actor_loss_fn(actor_params):    
         dist = actor.apply_fn({"params": actor_params}, batch.images, 
                               batch.proprioceptions, False)
-        actions = dist.sample(seed=key)
-        log_probs = dist.log_prob(actions)
+        actions, log_probs = dist.sample_and_log_prob(seed=key)
 
         q1, q2 = critic.apply_fn(
             {'params': critic.params}, batch.images, batch.proprioceptions, 
             actions)
         
-        q = jnp.minimum(q1, q2)
+        # q = jnp.minimum(q1, q2)
+        q = (q1 + q2)/2
         temp_val = temp.apply_fn({"params": temp.params})
         actor_loss = (log_probs * temp_val - q).mean()
 

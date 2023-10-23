@@ -12,10 +12,10 @@ from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
-import jaxlib
 import argparse
 import multiprocessing as mp
 import shutil
+import numpy as np
 
 
 config = {
@@ -35,7 +35,7 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='hopper_sync_prop_R3', type=str)
+    parser.add_argument('--name', default='hopper_sync_prop_actor', type=str)
     parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
@@ -59,13 +59,13 @@ def parse_args():
     # parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=1e-4, type=float)
+    parser.add_argument('--critic_lr', default=3e-4, type=float)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=1e-4, type=float)
-    parser.add_argument('--actor_update_freq', default=2, type=int)
+    parser.add_argument('--actor_lr', default=3e-4, type=float)
+    parser.add_argument('--actor_update_freq', default=1, type=int)
     # parser.add_argument('--use_critic_encoder', default=True, 
     #                     action='store_true')
     
@@ -75,7 +75,7 @@ def parse_args():
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
-    parser.add_argument('--temp_lr', default=1e-4, type=float)
+    parser.add_argument('--temp_lr', default=3e-4, type=float)
     
     # misc
     parser.add_argument('--work_dir', default='.', type=str)
@@ -153,6 +153,14 @@ def main(seed=-1):
     args.proprioception_shape = env.proprioception_space.shape
     args.action_shape = env.action_space.shape
     args.env_action_space = env.action_space
+
+    if np.all(env.action_space.low == -1) and np.all(env.action_space.high == 1):
+        args.low = None
+        args.high = None
+    else:
+        args.low = env.action_space.low
+        args.high = env.action_space.high
+
     
     if args.sync_mode:
         agent = SACRADAgent(args)
@@ -164,7 +172,10 @@ def main(seed=-1):
 
     while env.total_steps < args.env_steps:
         t1 = time.time()
-        action = agent.sample_actions(proprioception)
+        if env.total_steps < args.init_steps:
+            action = env.action_space.sample()
+        else:
+            action = agent.sample_actions(proprioception)
         t2 = time.time()
         next_proprioception, reward, done, info = env.step(action)
         t3 = time.time()

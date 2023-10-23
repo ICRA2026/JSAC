@@ -23,11 +23,11 @@ def get_init_data(init_image_shape, init_proprioception_shape, mode):
     
 
 def init_inference_actor(rng, init_image_shape, init_proprioception_shape, 
-                         action_dim, net_params, spatial_softmax=True, 
-                         mode=MODE.IMG_PROP):
+                         action_dim, net_params, action_low, action_high, 
+                         spatial_softmax=True, mode=MODE.IMG_PROP):
     
-    model = ActorModel(action_dim=action_dim, net_params=net_params,
-                       spatial_softmax=spatial_softmax, mode=mode)
+    model = ActorModel(action_dim, net_params, spatial_softmax, mode, 
+                       action_low, action_high)
     
     init_image, init_proprioception = get_init_data(
         init_image_shape, init_proprioception_shape, mode)
@@ -39,12 +39,12 @@ def init_inference_actor(rng, init_image_shape, init_proprioception_shape,
 
 
 def init_actor(rng, critic, learning_rate, init_image_shape, 
-               init_proprioception_shape, action_dim, net_params, 
-               spatial_softmax=True, use_critic_encoder=True, 
-               mode=MODE.IMG_PROP):
+               init_proprioception_shape, action_dim, net_params,
+               action_low, action_high, spatial_softmax=True, 
+               use_critic_encoder=True, mode=MODE.IMG_PROP):
 
-    model = ActorModel(action_dim=action_dim, net_params=net_params,
-                       spatial_softmax=spatial_softmax, mode=mode)
+    model = ActorModel(action_dim, net_params, spatial_softmax, mode, 
+                       action_low, action_high)
 
     rng, key1 = random.split(rng, 2)
     
