@@ -75,9 +75,6 @@ class BaseAgent:
         self._buffer_load_path = args.buffer_load_path
         self._total_env_steps = args.env_steps
 
-        self._action_low = args.low
-        self._action_high = args.high
-
         self._update_step = 0
 
     def _unpack(self, state):
@@ -110,8 +107,7 @@ class BaseAgent:
         self._rng, self._actor = init_actor(
             self._rng, self._critic, self._actor_lr, init_image_shape,
             init_proprioception_shape, self._action_dim, self._net_params,
-            self._action_low, self._action_high, self._spatial_softmax, 
-            self._use_critic_encoder, self._mode)
+            self._spatial_softmax, self._use_critic_encoder, self._mode)
 
         self._rng, self._temp = init_temperature(
             self._rng, self._temp_lr, self._init_temperature)
@@ -276,8 +272,8 @@ class AsyncSACRADAgent(BaseAgent):
 
         self._rng, self._actor_model = init_inference_actor(
             self._rng, image_shape, self._proprioception_shape,
-            self._action_dim, self._net_params, self._action_low, 
-            self._action_high, self._spatial_softmax, self._mode)
+            self._action_dim, self._net_params, self._spatial_softmax, 
+            self._mode)
 
         self._actor_params = self._actor_queue.get()
 

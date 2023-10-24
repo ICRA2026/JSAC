@@ -188,33 +188,33 @@ class TanhMultivariateNormalDiag(distrax.Transformed):
         self,
         loc: jnp.ndarray,
         scale_diag: jnp.ndarray,
-        low: Optional[jnp.ndarray] = None,
-        high: Optional[jnp.ndarray] = None,
+        # low: Optional[jnp.ndarray] = None,
+        # high: Optional[jnp.ndarray] = None,
     ):
         distribution = distrax.MultivariateNormalDiag(loc=loc, 
                                                       scale_diag=scale_diag)
 
         layers = []
 
-        if not (low is None or high is None):
+        # if not (low is None or high is None):
 
-            def rescale_from_tanh(x):
-                x = (x + 1) / 2  # (-1, 1) => (0, 1)
-                return x * (high - low) + low
+        #     def rescale_from_tanh(x):
+        #         x = (x + 1) / 2  # (-1, 1) => (0, 1)
+        #         return x * (high - low) + low
 
-            def forward_log_det_jacobian(x):
-                high_ = jnp.broadcast_to(high, x.shape)
-                low_ = jnp.broadcast_to(low, x.shape)
-                return jnp.sum(jnp.log(0.5 * (high_ - low_)), -1)
+        #     def forward_log_det_jacobian(x):
+        #         high_ = jnp.broadcast_to(high, x.shape)
+        #         low_ = jnp.broadcast_to(low, x.shape)
+        #         return jnp.sum(jnp.log(0.5 * (high_ - low_)), -1)
 
-            layers.append(
-                distrax.Lambda(
-                    rescale_from_tanh,
-                    forward_log_det_jacobian=forward_log_det_jacobian,
-                    event_ndims_in=1,
-                    event_ndims_out=1,
-                )
-            )
+        #     layers.append(
+        #         distrax.Lambda(
+        #             rescale_from_tanh,
+        #             forward_log_det_jacobian=forward_log_det_jacobian,
+        #             event_ndims_in=1,
+        #             event_ndims_out=1,
+        #         )
+        #     )
 
         layers.append(distrax.Block(distrax.Tanh(), 1))
 
@@ -231,8 +231,8 @@ class ActorModel(nn.Module):
     net_params: dict 
     spatial_softmax: bool = True
     mode: str = MODE.IMG_PROP
-    low: Optional[jnp.ndarray] = None
-    high: Optional[jnp.ndarray] = None
+    # low: Optional[jnp.ndarray] = None
+    # high: Optional[jnp.ndarray] = None
 
     @nn.compact
     def __call__(self, images, proprioceptions, deterministic=False):
@@ -252,8 +252,8 @@ class ActorModel(nn.Module):
        
         log_stds = jnp.clip(log_stds, LOG_STD_MIN, LOG_STD_MAX)
 
-        return TanhMultivariateNormalDiag(
-            means, jnp.exp(log_stds), self.low, self.high)
+        return TanhMultivariateNormalDiag(means, jnp.exp(log_stds))
+        # means, jnp.exp(log_stds), self.low, self.high)
     
     def __hash__(self): 
         return id(self)

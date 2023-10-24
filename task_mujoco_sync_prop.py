@@ -153,14 +153,6 @@ def main(seed=-1):
     args.proprioception_shape = env.proprioception_space.shape
     args.action_shape = env.action_space.shape
     args.env_action_space = env.action_space
-
-    if np.all(env.action_space.low == -1) and np.all(env.action_space.high == 1):
-        args.low = None
-        args.high = None
-    else:
-        args.low = env.action_space.low
-        args.high = env.action_space.high
-
     
     if args.sync_mode:
         agent = SACRADAgent(args)
