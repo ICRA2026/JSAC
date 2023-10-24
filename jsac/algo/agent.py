@@ -147,9 +147,6 @@ class BaseAgent:
 
         t2 = time.time()
 
-        # if self._update_step < 15:
-        #     print(f'Update {self._update_step} took {t3 - t2}s')
-
         info['update_time'] = (t2 - t1) * 1000
         info['num_updates'] = self._update_step
 
@@ -439,8 +436,8 @@ def sample_actions(rng, apply_fn, params, state, mode, apply_rad, rad_height,
     rng, key = random.split(rng)
     image_ob, propri_ob = process_state(state, mode, apply_rad, rad_height,
                                         rad_width)
-    dist = apply_fn({"params": params}, image_ob, propri_ob, False)
-    actions = dist.sample(seed=key)
+    _, actions, _, _ = apply_fn({"params": params}, image_ob, propri_ob,
+                                False, key)
     return rng, jnp.squeeze(actions, 0)
 
 

@@ -6,10 +6,9 @@ from flax.core.frozen_dict import freeze
 def critic_update(rng, actor, critic, critic_target, temp, batch, discount):
 
     rng, key = random.split(rng)
-
-    dist = actor.apply_fn({"params": actor.params}, batch.next_images, 
-                          batch.next_proprioceptions, False)  
-    next_actions, next_log_probs = dist.sample_and_log_prob(seed=key)
+    _, next_actions, next_log_probs, _ = actor.apply_fn(
+        {"params": actor.params}, batch.next_images, batch.next_proprioceptions,
+        False, key)  
 
     target_Q1, target_Q2 = critic_target.apply_fn(
         {"params": critic_target.params}, batch.next_images, 
@@ -44,16 +43,15 @@ def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
     rng, key = random.split(rng)
 
     def actor_loss_fn(actor_params):    
-        dist = actor.apply_fn({"params": actor_params}, batch.images, 
-                              batch.proprioceptions, False)
-        actions, log_probs = dist.sample_and_log_prob(seed=key)
+        _, actions, log_probs, _ = actor.apply_fn(
+            {"params": actor_params}, batch.images, batch.proprioceptions,
+            False, key)
 
         q1, q2 = critic.apply_fn(
             {'params': critic.params}, batch.images, batch.proprioceptions, 
             actions)
         
-        # q = jnp.minimum(q1, q2)
-        q = (q1 + q2)/2
+        q = jnp.minimum(q1, q2)
         temp_val = temp.apply_fn({"params": temp.params})
         actor_loss = (log_probs * temp_val - q).mean()
 

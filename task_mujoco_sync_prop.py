@@ -35,7 +35,7 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='hopper_sync_prop_actor', type=str)
+    parser.add_argument('--name', default='hopper_sync_prop_rld_actor', type=str)
     parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
