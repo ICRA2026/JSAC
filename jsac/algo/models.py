@@ -15,7 +15,7 @@ import distrax
 # def default_init(scale: Optional[float] = 1.0):
 #     return nn.initializers.orthogonal(scale)
 
-def default_init(scale: float = jnp.sqrt(2)):
+def default_init(scale: float = jnp.sqrt(2)/10):
     return nn.initializers.orthogonal(scale)
 
 

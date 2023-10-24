@@ -40,12 +40,7 @@ def parse_args():
     parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-
     parser.add_argument('--env_name', default='Hopper-v2', type=str)
-    # parser.add_argument('--image_height', default=120, type=int)
-    # parser.add_argument('--image_width', default=120, type=int)
-    # parser.add_argument('--stack_frames', default=3, type=int)
-    parser.add_argument('--tqdm', default=True, action='store_true')
 
     # replay buffer
     parser.add_argument('--replay_buffer_capacity', default=1000000, type=int)
@@ -55,8 +50,6 @@ def parse_args():
     parser.add_argument('--env_steps', default=1000000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
-    # parser.add_argument('--apply_rad', default=True, action='store_true')
-    # parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float)
@@ -66,12 +59,7 @@ def parse_args():
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    # parser.add_argument('--use_critic_encoder', default=True, 
-    #                     action='store_true')
-    
-    # encoder
-    # parser.add_argument('--spatial_softmax', default=True, action='store_true')
-    
+
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
