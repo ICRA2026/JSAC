@@ -3,9 +3,12 @@ gym==0.23.1
 jax==0.4.12
 jaxlib==0.4.12
 matplotlib==3.7.2
-numpy==1.25.2
-optax==0.1.5
+numpy==1.22.4
+optax==0.1.7
+Pillow==10.0.0
+pyserial==3.5
+PyYAML==6.0.1
+setuptools==68.1.2
 tensorboardX==2.6.2
-tensorflow_probability==0.20.0
 termcolor==2.3.0
 tqdm==4.65.0
