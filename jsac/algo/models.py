@@ -7,7 +7,7 @@ from jax import random
 from jsac.helpers.utils import MODE
 
 
-def default_init(scale: Optional[float] = jnp.sqrt(2)/5):
+def default_init(scale: Optional[float] = jnp.sqrt(2)):
     return nn.initializers.orthogonal(scale)
 
 
@@ -107,8 +107,8 @@ class MLP(nn.Module):
         return x
 
 
-LOG_STD_MIN = -20.0
-LOG_STD_MAX = 2.0
+LOG_STD_MIN = -10.0
+LOG_STD_MAX = 10.0
 
 
 def gaussian_logprob(noise, log_std):
@@ -147,12 +147,12 @@ class ActorModel(nn.Module):
         
         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
 
-        mu = nn.Dense(self.action_dim, kernel_init=default_init())(outputs)
+        mu = nn.Dense(self.action_dim, kernel_init=default_init(0.0))(outputs)
         
         if deterministic:
             return nn.tanh(mu)
 
-        log_std = nn.Dense(self.action_dim, kernel_init=default_init())(outputs)
+        log_std = nn.Dense(self.action_dim, kernel_init=default_init(0.0))(outputs)
 
         log_std = nn.tanh(log_std)
         log_std = LOG_STD_MIN + 0.5 * (

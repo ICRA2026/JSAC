@@ -1,4 +1,4 @@
-from jsac.algo.replay_buffer import RadReplayBuffer, Batch, AsyncSMRadReplayBuffer
+from jsac.algo.replay_buffer import Batch, AsyncSMRadReplayBuffer
 
 import jax
 from jax import vmap, random

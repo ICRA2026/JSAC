@@ -3,6 +3,7 @@ warnings.filterwarnings("ignore")
 
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
+# os.environ['CUDA_VISIBLE_DEVICES']='0'
 # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
 # os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
@@ -35,7 +36,7 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='hopper_sync_prop_rld_actor', type=str)
+    parser.add_argument('--name', default='hopper_sync_prop', type=str)
     parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
@@ -61,9 +62,9 @@ def parse_args():
     parser.add_argument('--actor_update_freq', default=1, type=int)
 
     # sac
+    parser.add_argument('--temp_lr', default=3e-4, type=float)
     parser.add_argument('--discount', default=0.99, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
-    parser.add_argument('--temp_lr', default=3e-4, type=float)
     
     # misc
     parser.add_argument('--work_dir', default='.', type=str)
@@ -152,10 +153,7 @@ def main(seed=-1):
 
     while env.total_steps < args.env_steps:
         t1 = time.time()
-        if env.total_steps < args.init_steps:
-            action = env.action_space.sample()
-        else:
-            action = agent.sample_actions(proprioception)
+        action = agent.sample_actions(proprioception)
         t2 = time.time()
         next_proprioception, reward, done, info = env.step(action)
         t3 = time.time()
@@ -209,10 +207,10 @@ def main(seed=-1):
 if __name__ == '__main__':
     mp.set_start_method('spawn')
 
-    for i in range(15):
-        main(i)
+    # for i in range(30):
+    #     main(i)
 
-    # main()
+    main()
 
 
 
