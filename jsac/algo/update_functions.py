@@ -41,6 +41,12 @@ def critic_update(rng, actor, critic, critic_target, temp, batch, discount):
 def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
     
     rng, key = random.split(rng)
+    temp_val = temp.apply_fn({"params": temp.params})
+
+    if use_critic_encoder:
+        params = actor.params
+        params['encoder'] = critic.params['encoder']
+        actor = actor.replace(params=params)
 
     def actor_loss_fn(actor_params):    
         _, actions, log_probs, _ = actor.apply_fn(
@@ -52,18 +58,13 @@ def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
             actions)
         
         q = jnp.minimum(q1, q2)
-        temp_val = temp.apply_fn({"params": temp.params})
+        
         actor_loss = (log_probs * temp_val - q).mean()
 
         return actor_loss, {
             'actor_loss': actor_loss,
             'entropy': -log_probs.mean()
         }
-    
-    if use_critic_encoder:
-        params = actor.params
-        params['encoder'] = critic.params['encoder']
-        actor = actor.replace(params=params)
 
     grads, info = jax.grad(actor_loss_fn, has_aux=True)(actor.params)
     actor_new = actor.apply_gradients(grads=grads)

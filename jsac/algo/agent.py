@@ -120,6 +120,7 @@ class BaseAgent:
         self._update_step += 1
 
         t1 = time.time()
+        
         batch = self._replay_buffer.sample()
 
         self._rng, actor, critic, critic_target, temp, info = update_jit(
@@ -470,8 +471,11 @@ def update_jit(rng, actor, critic, critic_target, temp, batch, discount, tau,
         rng, key1, key2 = random.split(rng, 3)
         batch_size = batch.images.shape[0]
 
-        rad_height_maxval = (2 * rad_height) + 1
-        rad_width_maxval = (2 * rad_width) + 1
+        # rad_height_maxval = (2 * rad_height) + 1
+        # rad_width_maxval = (2 * rad_width) + 1
+
+        rad_height_maxval = rad_height + 1
+        rad_width_maxval = rad_width + 1
 
         rand_height = random.randint(
             key1, minval=0, maxval=rad_height_maxval, shape=(batch_size,))

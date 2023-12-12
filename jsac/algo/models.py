@@ -2,6 +2,7 @@ from typing import Optional, Sequence
 
 import flax
 import flax.linen as nn
+import jax
 import jax.numpy as jnp
 from jax import random
 from jsac.helpers.utils import MODE
@@ -25,16 +26,16 @@ class SpatialSoftmax(nn.Module):
       self._pos_x = pos_x.reshape(self.height*self.width)
       self._pos_y = pos_y.reshape(self.height*self.width)
 
-      self._temperature = self.param(
-          'temperature', 
-          nn.initializers.constant(self.temp), (1,)) 
+    #   self._temperature = self.param(
+    #       'temperature', 
+    #       nn.initializers.constant(self.temp), (1,)) 
 
     @nn.compact
     def __call__(self, feature):  
         feature = feature.transpose(0, 3, 1, 2)
         feature = feature.reshape(-1, self.height*self.width)
 
-        feature = feature/self._temperature
+        # feature = feature/self._temperature
     
         softmax_attention = nn.activation.softmax(feature, axis = -1)
 
@@ -56,7 +57,7 @@ class Encoder(nn.Module):
     mode: str = MODE.IMG_PROP
 
     @nn.compact
-    def __call__(self, images, proprioceptions):
+    def __call__(self, images, proprioceptions, stop_gradient=False):          
         if self.mode == MODE.PROP:
             return proprioceptions
         
@@ -67,11 +68,13 @@ class Encoder(nn.Module):
 
         for i, (_, out_channel, kernel_size, stride) in enumerate(conv_params):
             layer_name = 'encoder_conv_' + str(i)
+
             x = nn.Conv(features=out_channel, 
                         kernel_size=(kernel_size, kernel_size),
-                        strides=(stride, stride),
+                        strides=stride,
+                        padding=0,
                         kernel_init=nn.initializers
-                        .delta_orthogonal(column_axis=-1),
+                        .delta_orthogonal(),
                         name=layer_name 
             )(x)
 
@@ -80,14 +83,17 @@ class Encoder(nn.Module):
 
         if self.spatial_softmax:
             b, height, width, channel = x.shape
-            x = SpatialSoftmax(height=height, width=width, channel=channel, 
+            x = SpatialSoftmax(height=width, width=height, channel=channel, 
                                name='encoder_spatialsoftmax')(x)
         else:
             x = x.reshape((x.shape[0], -1))
             x = nn.Dense(self.net_params['latent'], kernel_init=default_init(), 
                          name='encoder_dense')(x)
             x = nn.LayerNorm(name='encoder_layernorm')(x)
-            
+
+        if stop_gradient:
+            x = jax.lax.stop_gradient(x)
+
         if self.mode == MODE.IMG_PROP:
            x = jnp.concatenate(axis = -1, arrays=(x, proprioceptions)) 
 
@@ -139,11 +145,11 @@ class ActorModel(nn.Module):
     mode: str = MODE.IMG_PROP
 
     @nn.compact
-    def __call__(self, images, proprioceptions, deterministic=False, key=None):
+    def __call__(self, images, proprioceptions, deterministic=False, key=None, stop_gradient=False):
         
         latents = Encoder(self.net_params, self.spatial_softmax,
                           name='encoder',
-                          mode=self.mode)(images, proprioceptions)
+                          mode=self.mode)(images, proprioceptions, stop_gradient)
         
         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
 
@@ -191,17 +197,20 @@ class CriticModel(nn.Module):
     num_qs: int = 2
 
     @nn.compact
-    def __call__(self, images, proprioceptions, actions):
+    def __call__(self, images, proprioceptions, actions, stop_gradient=False):
         latents = Encoder(self.net_params, self.spatial_softmax, name='encoder',
-                          mode=self.mode)(images, proprioceptions)
+                          mode=self.mode)(images, proprioceptions, stop_gradient)
         
-        VmapCritic = nn.vmap(QFunction, variable_axes={'params': 0},
-                             split_rngs={'params': True}, in_axes=None,
-                             out_axes=0, axis_size=self.num_qs)
+        # VmapCritic = nn.vmap(QFunction, variable_axes={'params': 0},
+        #                      split_rngs={'params': True}, in_axes=None,
+        #                      out_axes=0, axis_size=self.num_qs)
         
-        qs = VmapCritic(self.net_params['mlp'])(latents, actions)
+        # qs = VmapCritic(self.net_params['mlp'])(latents, actions)
+
+        q1 = QFunction(self.net_params['mlp'])(latents, actions)
+        q2 = QFunction(self.net_params['mlp'])(latents, actions)
         
-        return qs
+        return (q1, q2)
     
 
 class Temperature(nn.Module):
