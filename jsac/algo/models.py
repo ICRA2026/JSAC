@@ -35,16 +35,16 @@ class SpatialSoftmax(nn.Module):
       self._pos_x = pos_x.reshape(self.height*self.width)
       self._pos_y = pos_y.reshape(self.height*self.width)
 
-    #   self._temperature = self.param(
-    #       'temperature', 
-    #       nn.initializers.constant(self.temp), (1,)) 
+      self._temperature = self.param(
+          'temperature', 
+          nn.initializers.constant(self.temp), (1,)) 
 
     @nn.compact
     def __call__(self, feature):  
         feature = feature.transpose(0, 3, 1, 2)
         feature = feature.reshape(-1, self.height*self.width)
 
-        # feature = feature/self._temperature
+        feature = feature/self._temperature
     
         softmax_attention = nn.activation.softmax(feature, axis = -1)
 
@@ -82,44 +82,39 @@ class Encoder(nn.Module):
         if rad_offset > 0: 
             rad_h = max(round(rad_offset * height), 1)
             rad_w = max(round(rad_offset * width), 1)
-
-            rand_height = random.randint(keys[0], (batch_size,), 0, rad_h+1)
-            rand_width = random.randint(keys[1], (batch_size,), 0, rad_w+1)
             
             rad_image_shape = ((height - (2 * rad_h)), 
                                (width - (2 * rad_w)), 
                                channel)
     
                     
-            # if batch_size == 1:
-            #     images = jnp.squeeze(images, 0)
-            #     images = augment(images, 
-            #                      rand_height[0], 
-            #                      rand_width[0], 
-            #                      rad_image_shape)
-            #     images = jnp.expand_dims(images, 0)
-            # else:
-            get_augments = vmap(augment, in_axes=(0, 0, 0, None))
-            images = get_augments(images, 
-                                rand_height, 
-                                rand_width, 
-                                rad_image_shape)
+            if batch_size == 1:
+                images = jnp.squeeze(images, 0)
+                images = augment(images, 
+                                 rad_h, 
+                                 rad_w, 
+                                 rad_image_shape)
+                images = jnp.expand_dims(images, 0)
+            else:
+                rand_height = random.randint(keys[0], (batch_size,), 0, rad_h+1)
+                rand_width = random.randint(keys[1], (batch_size,), 0, rad_w+1)
+                get_augments = vmap(augment, in_axes=(0, 0, 0, None))
+                images = get_augments(images, 
+                                    rand_height, 
+                                    rand_width, 
+                                    rad_image_shape)
 
         x = images / 255.0
 
         for i, (_, out_channel, kernel_size, stride) in enumerate(conv_params):
             layer_name = 'encoder_conv_' + str(i)
 
-
             x = nn.Conv(features=out_channel, 
                         kernel_size=(kernel_size, kernel_size),
                         strides=stride,
-                        padding=0,
-                        strides=stride,
-                        padding=0,
+                        padding=0,  
                         kernel_init=nn.initializers
-                        .delta_orthogonal(),
-                        .delta_orthogonal(),
+                        .delta_orthogonal(), 
                         name=layer_name 
             )(x)
 
@@ -136,10 +131,6 @@ class Encoder(nn.Module):
                          kernel_init=default_init(), 
                          name='encoder_dense')(x)
             x = nn.LayerNorm(name='encoder_layernorm')(x)
-
-        if stop_gradient:
-            x = jax.lax.stop_gradient(x)
-
 
         if stop_gradient:
             x = jax.lax.stop_gradient(x)
