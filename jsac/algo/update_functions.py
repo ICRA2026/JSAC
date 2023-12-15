@@ -3,16 +3,32 @@ from jax import random, numpy as jnp
 from flax.core.frozen_dict import freeze
 
 
-def critic_update(rng, actor, critic, critic_target, temp, batch, discount):
+def critic_update(rng, 
+                  actor, 
+                  critic, 
+                  critic_target, 
+                  temp, 
+                  batch, 
+                  discount):
 
-    rng, key = random.split(rng)
+    rng, *keys_ac = random.split(rng, 4)
+    rng, *keys_crt = random.split(rng, 3)
+    rng, *keys_cr = random.split(rng, 3)
+    
     _, next_actions, next_log_probs, _ = actor.apply_fn(
-        {"params": actor.params}, batch.next_images, batch.next_proprioceptions,
-        False, key)  
+        {"params": actor.params}, 
+        batch.next_images, 
+        batch.next_proprioceptions,
+        False, 
+        keys_ac)  
 
     target_Q1, target_Q2 = critic_target.apply_fn(
-        {"params": critic_target.params}, batch.next_images, 
-        batch.next_proprioceptions, next_actions)
+        {"params": critic_target.params}, 
+        batch.next_images, 
+        batch.next_proprioceptions, 
+        next_actions, 
+        keys_crt)
+    
     
     temp_val = temp.apply_fn({"params": temp.params})
     target_V = jnp.minimum(target_Q1, target_Q2) - temp_val * next_log_probs
@@ -21,8 +37,11 @@ def critic_update(rng, actor, critic, critic_target, temp, batch, discount):
 
     def critic_loss_fn(critic_params):
         q1, q2 = critic.apply_fn( 
-            {'params': critic_params}, batch.images, batch.proprioceptions, 
-            batch.actions)
+            {'params': critic_params}, 
+            batch.images, 
+            batch.proprioceptions, 
+            batch.actions, 
+            keys_cr)
         
         critic_loss = ((q1 - target_Q)**2 + (q2 - target_Q)**2).mean()
 
@@ -39,31 +58,41 @@ def critic_update(rng, actor, critic, critic_target, temp, batch, discount):
 
 
 def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
+    rng, *keys_ac = random.split(rng, 4)
+    rng, *keys_cr = random.split(rng, 3)
     
-    rng, key = random.split(rng)
+    temp_val = temp.apply_fn({"params": temp.params})
+
+    if use_critic_encoder:
+        params = actor.params
+        params['encoder'] = critic.params['encoder']
+        actor = actor.replace(params=params)
 
     def actor_loss_fn(actor_params):    
         _, actions, log_probs, _ = actor.apply_fn(
-            {"params": actor_params}, batch.images, batch.proprioceptions,
-            False, key)
-
+            {"params": actor_params}, 
+            batch.images, 
+            batch.proprioceptions,
+            False, 
+            keys_ac, 
+            True)
+ 
         q1, q2 = critic.apply_fn(
-            {'params': critic.params}, batch.images, batch.proprioceptions, 
-            actions)
+            {'params': critic.params}, 
+            batch.images, 
+            batch.proprioceptions, 
+            actions, 
+            keys_cr, 
+            True)
         
         q = jnp.minimum(q1, q2)
-        temp_val = temp.apply_fn({"params": temp.params})
+        
         actor_loss = (log_probs * temp_val - q).mean()
 
         return actor_loss, {
             'actor_loss': actor_loss,
             'entropy': -log_probs.mean()
         }
-    
-    if use_critic_encoder:
-        params = actor.params
-        params['encoder'] = critic.params['encoder']
-        actor = actor.replace(params=params)
 
     grads, info = jax.grad(actor_loss_fn, has_aux=True)(actor.params)
     actor_new = actor.apply_gradients(grads=grads)
@@ -71,7 +100,7 @@ def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
     return rng, actor_new, info
 
 def temp_update(temp, entropy, target_entropy):
-
+    
     def temperature_loss_fn(temp_params):
         temperature = temp.apply_fn({'params': temp_params})
         temp_loss = temperature * (entropy - target_entropy).mean()

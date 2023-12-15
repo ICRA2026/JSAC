@@ -15,8 +15,14 @@ Batch = collections.namedtuple(
 class RadReplayBuffer():
     """Buffer to store environment transitions."""
 
-    def __init__(self, image_shape, proprioception_shape, action_shape,
-                 capacity, batch_size, init_buffers=True, load_path=''):
+    def __init__(self, 
+                 image_shape, 
+                 proprioception_shape, 
+                 action_shape,
+                 capacity, 
+                 batch_size, 
+                 init_buffers=True, 
+                 load_path=''):
 
         self._image_shape = image_shape
         self._proprioception_shape = proprioception_shape
@@ -53,9 +59,11 @@ class RadReplayBuffer():
         else:
             if not self._ignore_image:
                 self._images = np.empty(
-                    (self._capacity, *self._image_shape), dtype=np.uint8)
+                    (self._capacity, *self._image_shape), 
+                    dtype=np.uint8)
                 self._next_images = np.empty(
-                    (self._capacity, *self._image_shape), dtype=np.uint8)
+                    (self._capacity, *self._image_shape), 
+                    dtype=np.uint8)
 
             if not self._ignore_propri:
                 self._propris = np.empty(
@@ -66,12 +74,22 @@ class RadReplayBuffer():
                     dtype=np.float32)
 
             self._actions = np.empty(
-                (self._capacity, *self._action_shape), dtype=np.float32)
+                (self._capacity, *self._action_shape), 
+                dtype=np.float32)
             
-            self._rewards = np.empty((self._capacity), dtype=np.float32)
-            self._masks = np.empty((self._capacity), dtype=np.float32)
+            self._rewards = np.empty((self._capacity), 
+                                     dtype=np.float32)
+            self._masks = np.empty((self._capacity), 
+                                   dtype=np.float32)
 
-    def add(self, image, propri, action, reward, next_image, next_propri, mask):
+    def add(self, 
+            image, 
+            propri, 
+            action, 
+            reward, 
+            next_image, 
+            next_propri, 
+            mask):
         if not self._ignore_image:
             self._images[self._idx] = image
             self._next_images[self._idx] = next_image
@@ -88,7 +106,8 @@ class RadReplayBuffer():
         self._steps += 1
 
     def sample(self):
-        idxs = np.random.randint(0, self._count,
+        idxs = np.random.randint(0, 
+                                 self._count,
                                  size=min(self._count, self._batch_size))
         
         if self._ignore_image:
@@ -109,9 +128,13 @@ class RadReplayBuffer():
         rewards = self._rewards[idxs]
         masks = self._masks[idxs]
 
-        return Batch(images=images, proprioceptions=propris,
-                     actions=actions, rewards=rewards, masks=masks,
-                     next_images=next_images, next_proprioceptions=next_propris)
+        return Batch(images=images, 
+                     proprioceptions=propris,
+                     actions=actions, 
+                     rewards=rewards, 
+                     masks=masks,
+                     next_images=next_images, 
+                     next_proprioceptions=next_propris)
 
 
     def save(self, save_path):
@@ -177,15 +200,25 @@ class RadReplayBuffer():
 
 
 class AsyncSMRadReplayBuffer(RadReplayBuffer):
-    def __init__(self, image_shape, proprioception_shape, action_shape, 
-                 capacity, batch_size, obs_queue, init_steps, load_path=''):
+    def __init__(self, 
+                 image_shape, 
+                 proprioception_shape, 
+                 action_shape, 
+                 capacity, 
+                 batch_size, 
+                 obs_queue, 
+                 load_path=''):
         super().__init__(
-            image_shape, proprioception_shape, action_shape, capacity,
-            batch_size, False, load_path)
+            image_shape, 
+            proprioception_shape, 
+            action_shape, 
+            capacity,
+            batch_size, 
+            False, 
+            load_path)
         
         sizes = self._get_batch_data_sizes(batch_size)
 
-        self._init_steps = init_steps
         self._obs_queue = obs_queue
 
         self._producer_queue = Queue()
@@ -416,7 +449,7 @@ class AsyncSMRadReplayBuffer(RadReplayBuffer):
 
         while not self._start_batch:
             # Checking if the replay buffer process 
-            # needs to be close while waiting
+            # needs to be closed while waiting
             if not self._consumer_queue.empty():
                 code = int(self._consumer_queue.get())
                 if code == self._close_code:

@@ -8,7 +8,9 @@ from jsac.helpers.utils import MODE
 import numpy as np
 
 
-def get_init_data(init_image_shape, init_proprioception_shape, mode):
+def get_init_data(init_image_shape, 
+                  init_proprioception_shape, 
+                  mode):
     init_image = None
     init_proprioception = None 
 
@@ -22,40 +24,70 @@ def get_init_data(init_image_shape, init_proprioception_shape, mode):
     return init_image, init_proprioception
     
 
-def init_inference_actor(rng, init_image_shape, init_proprioception_shape, 
-                         action_dim, net_params, spatial_softmax=True, 
+def init_inference_actor(rng, 
+                         init_image_shape, 
+                         init_proprioception_shape, 
+                         action_dim, 
+                         net_params, 
+                         rad_offset, 
+                         spatial_softmax=True, 
                          mode=MODE.IMG_PROP):
     
-    model = ActorModel(action_dim=action_dim, net_params=net_params,
-                       spatial_softmax=spatial_softmax, mode=mode)
+    model = ActorModel(action_dim, 
+                       net_params, 
+                       rad_offset, 
+                       spatial_softmax, 
+                       mode)
     
     init_image, init_proprioception = get_init_data(
-        init_image_shape, init_proprioception_shape, mode)
+        init_image_shape, 
+        init_proprioception_shape, 
+        mode)
 
-    rng, key1, key2 = random.split(rng, 3)
-    model.init(key1, init_image, init_proprioception, False, key2)['params']
+    rng, *keys = random.split(rng, 5)
+    model.init(keys[0], 
+               init_image, 
+               init_proprioception, 
+               False,
+               keys[1:], 
+               False)['params']
 
     return rng, model
 
 
-def init_actor(rng, critic, learning_rate, init_image_shape, 
-               init_proprioception_shape, action_dim, net_params, 
-               spatial_softmax=True, use_critic_encoder=True, 
+def init_actor(rng, 
+               critic, 
+               learning_rate, 
+               init_image_shape, 
+               init_proprioception_shape, 
+               action_dim, 
+               net_params, 
+               rad_offset, 
+               spatial_softmax=True, 
+               use_critic_encoder=True, 
                mode=MODE.IMG_PROP):
 
-    model = ActorModel(action_dim=action_dim, net_params=net_params,
-                       spatial_softmax=spatial_softmax, mode=mode)
+    model = ActorModel(action_dim, 
+                       net_params, 
+                       rad_offset, 
+                       spatial_softmax, 
+                       mode)
 
-    rng, key1, key2 = random.split(rng, 3)
+    rng, *keys = random.split(rng, 5)
     
     init_image, init_proprioception = get_init_data(
-        init_image_shape, init_proprioception_shape, mode)
+        init_image_shape, 
+        init_proprioception_shape, 
+        mode)
     
-    params = model.init(key1, init_image, init_proprioception, False, 
-                        key2)['params']
+    params = model.init(keys[0], 
+                        init_image, 
+                        init_proprioception, 
+                        False,
+                        keys[1:], 
+                        False)['params']
     
     if use_critic_encoder:
-        
         partition_optimizers = {
             'trainable': optax.adam(learning_rate=learning_rate), 
             'frozen': optax.set_to_zero()}
@@ -70,30 +102,46 @@ def init_actor(rng, critic, learning_rate, init_image_shape,
     else:
         tx = optax.adam(learning_rate=learning_rate)
     
-    return rng, TrainState.create(apply_fn=model.apply, params=params, tx=tx)
+    return rng, TrainState.create(apply_fn=model.apply, 
+                                  params=params, 
+                                  tx=tx)
 
 
-def init_critic(rng, learning_rate, init_image_shape, init_proprioception_shape, 
-                action_dim, net_params, spatial_softmax=True, 
+def init_critic(rng, 
+                learning_rate, 
+                init_image_shape, 
+                init_proprioception_shape, 
+                action_dim, 
+                net_params, 
+                rad_offset, 
+                spatial_softmax=True, 
                 mode=MODE.IMG_PROP):
     
-    model = CriticModel(action_dim=action_dim, net_params=net_params,
-                        spatial_softmax=spatial_softmax, mode=mode)
+    model = CriticModel(action_dim, 
+                        net_params, 
+                        rad_offset, 
+                        spatial_softmax, 
+                        mode)
     
-    rng, key = random.split(rng)
-    init_actions = random.uniform(key, (1, action_dim))
-
-    rng, key = random.split(rng)
+    rng, *keys = random.split(rng, 5)
+    init_actions = random.uniform(keys[0], (1, action_dim))
 
     init_image, init_proprioception = get_init_data(
-        init_image_shape, init_proprioception_shape, mode)
+        init_image_shape, 
+        init_proprioception_shape, 
+        mode)
     
-    params = model.init(key, init_image, init_proprioception, 
-                        init_actions)['params']
+    params = model.init(keys[1], 
+                        init_image, 
+                        init_proprioception, 
+                        init_actions, 
+                        keys[2:])['params']
 
     tx = optax.adam(learning_rate=learning_rate)
 
-    return rng, TrainState.create(apply_fn=model.apply, params=params, tx=tx)
+    return rng, TrainState.create(apply_fn=model.apply, 
+                                  params=params, 
+                                  tx=tx)
 
 
 def init_temperature(rng, learning_rate, alpha=1.0):
@@ -103,5 +151,6 @@ def init_temperature(rng, learning_rate, alpha=1.0):
 
     tx = optax.adam(learning_rate=learning_rate)
 
-    return rng, TrainState.create(apply_fn = model.apply, params=params, tx=tx)
-
+    return rng, TrainState.create(apply_fn=model.apply, 
+                                  params=params, 
+                                  tx=tx)

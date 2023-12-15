@@ -40,24 +40,34 @@ def smoothed_curve(returns, ep_lens, x_tick=5000, window_len=5000):
     """
     rets = []
     x = []
-    cum_episode_lengths = np.cumsum(ep_lens)
+    cuml_episode_lengths = np.cumsum(ep_lens)
 
-    if cum_episode_lengths[-1] >= x_tick:
-        y = cum_episode_lengths[-1] + 1
+    if cuml_episode_lengths[-1] >= x_tick:
+        y = cuml_episode_lengths[-1] + 1
         steps_show = np.arange(x_tick, y, x_tick)
 
         for i in range(len(steps_show)):
-            rets_in_window = returns[(cum_episode_lengths > max(0, x_tick * (i + 1) - window_len)) *
-                                     (cum_episode_lengths < x_tick * (i + 1))]
+            rets_in_window = returns[
+                (cuml_episode_lengths > max(0, x_tick * (i + 1) - window_len)) *
+                (cuml_episode_lengths < x_tick * (i + 1))]
             if rets_in_window.any():
                 rets.append(np.mean(rets_in_window))
                 x.append((i+1) * x_tick)
 
     return np.array(rets), np.array(x)
 
-def show_learning_curve(fname, rets, ep_lens, xtick, xlimit=None, ylimit=None, save_fig=True):
+def show_learning_curve(fname, 
+                        rets, 
+                        ep_lens, 
+                        xtick, 
+                        xlimit=None, 
+                        ylimit=None, 
+                        save_fig=True):
         plot_rets, plot_x = smoothed_curve(
-                np.array(rets), np.array(ep_lens), x_tick=xtick, window_len=xtick)
+                np.array(rets), 
+                np.array(ep_lens), 
+                x_tick=xtick, 
+                window_len=xtick)
         
         if len(plot_rets):
             plt.clf()
@@ -75,7 +85,10 @@ def show_learning_curve(fname, rets, ep_lens, xtick, xlimit=None, ylimit=None, s
 ## SRC: https://github.com/kindredresearch/SenseAct/blob/master/senseact/utils.py
 
 class EnvSpec():
-    def __init__(self, env_spec, observation_space, action_space):
+    def __init__(self, 
+                 env_spec, 
+                 observation_space, 
+                 action_space):
         self._observation_space = observation_space
         self._action_space = action_space
         self._unwrapped_spec = env_spec
