@@ -87,6 +87,7 @@ def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
         
         q = jnp.minimum(q1, q2)
         
+        
         actor_loss = (log_probs * temp_val - q).mean()
 
         return actor_loss, {

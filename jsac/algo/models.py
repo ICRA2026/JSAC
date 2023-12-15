@@ -3,6 +3,7 @@ from typing import Optional, Sequence
 import flax
 import flax.linen as nn
 import jax
+import jax
 import jax.numpy as jnp
 from jax import random, vmap
 from jsac.helpers.utils import MODE
@@ -34,16 +35,16 @@ class SpatialSoftmax(nn.Module):
       self._pos_x = pos_x.reshape(self.height*self.width)
       self._pos_y = pos_y.reshape(self.height*self.width)
 
-      self._temperature = self.param(
-          'temperature', 
-          nn.initializers.constant(self.temp), (1,)) 
+    #   self._temperature = self.param(
+    #       'temperature', 
+    #       nn.initializers.constant(self.temp), (1,)) 
 
     @nn.compact
     def __call__(self, feature):  
         feature = feature.transpose(0, 3, 1, 2)
         feature = feature.reshape(-1, self.height*self.width)
 
-        feature = feature/self._temperature
+        # feature = feature/self._temperature
     
         softmax_attention = nn.activation.softmax(feature, axis = -1)
 
@@ -109,11 +110,15 @@ class Encoder(nn.Module):
         for i, (_, out_channel, kernel_size, stride) in enumerate(conv_params):
             layer_name = 'encoder_conv_' + str(i)
 
+
             x = nn.Conv(features=out_channel, 
                         kernel_size=(kernel_size, kernel_size),
                         strides=stride,
                         padding=0,
+                        strides=stride,
+                        padding=0,
                         kernel_init=nn.initializers
+                        .delta_orthogonal(),
                         .delta_orthogonal(),
                         name=layer_name 
             )(x)
@@ -131,6 +136,10 @@ class Encoder(nn.Module):
                          kernel_init=default_init(), 
                          name='encoder_dense')(x)
             x = nn.LayerNorm(name='encoder_layernorm')(x)
+
+        if stop_gradient:
+            x = jax.lax.stop_gradient(x)
+
 
         if stop_gradient:
             x = jax.lax.stop_gradient(x)
