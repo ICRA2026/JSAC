@@ -286,15 +286,7 @@ class AsyncSACRADAgent(BaseAgent):
             self._batch_size, 
             self._obs_queue,
             self._buffer_load_path)
-            self._image_shape, 
-            self._proprioception_shape, 
-            self._action_shape,
-            self._replay_buffer_capacity, 
-            self._batch_size, 
-            self._obs_queue,
-            self._buffer_load_path)
 
-        self._init_models(self._image_shape, self._proprioception_shape)
         self._init_models(self._image_shape, self._proprioception_shape)
         self._actor_queue.put(self._actor.params)
         self._async_tasks()
@@ -303,13 +295,6 @@ class AsyncSACRADAgent(BaseAgent):
         image, proprioception = self._unpack(state)
         next_image, next_proprioception = self._unpack(next_state)
 
-        self._obs_queue.put((image, 
-                             proprioception, 
-                             action, 
-                             reward,
-                             next_image, 
-                             next_proprioception, 
-                             done))
         self._obs_queue.put((image, 
                              proprioception, 
                              action, 
@@ -415,7 +400,6 @@ class AsyncSACRADAgent(BaseAgent):
 
 
 def process_state(state, mode):
-def process_state(state, mode):
     image_ob = None
     propri_ob = None
     
@@ -467,28 +451,8 @@ def update_jit(rng,
                update_actor, 
                update_target, 
                use_critic_encoder):
-                                             'rad_offset'))
-def update_jit(rng, 
-               actor, 
-               critic, 
-               critic_target, 
-               temp, 
-               batch, 
-               discount, 
-               tau,
-               target_entropy, 
-               update_actor, 
-               update_target, 
-               use_critic_encoder):
 
     rng, critic_new, critic_info = critic_update(
-        rng, 
-        actor, 
-        critic, 
-        critic_target, 
-        temp, 
-        batch, 
-        discount)
         rng, 
         actor, 
         critic, 
@@ -509,15 +473,7 @@ def update_jit(rng,
                                                   temp,
                                                   batch, 
                                                   use_critic_encoder)
-        rng, new_actor, actor_info = actor_update(rng, 
-                                                  actor, 
-                                                  critic_new, 
-                                                  temp,
-                                                  batch, 
-                                                  use_critic_encoder)
 
-        new_temp, alpha_info = temp_update(temp, 
-                                           actor_info['entropy'],
         new_temp, alpha_info = temp_update(temp, 
                                            actor_info['entropy'],
                                            target_entropy)

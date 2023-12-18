@@ -10,18 +10,7 @@ def critic_update(rng,
                   temp, 
                   batch, 
                   discount):
-def critic_update(rng, 
-                  actor, 
-                  critic, 
-                  critic_target, 
-                  temp, 
-                  batch, 
-                  discount):
 
-    rng, *keys_ac = random.split(rng, 4)
-    rng, *keys_crt = random.split(rng, 3)
-    rng, *keys_cr = random.split(rng, 3)
-    
     rng, *keys_ac = random.split(rng, 4)
     rng, *keys_crt = random.split(rng, 3)
     rng, *keys_cr = random.split(rng, 3)
@@ -72,8 +61,6 @@ def critic_update(rng,
 def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
     rng, *keys_ac = random.split(rng, 4)
     rng, *keys_cr = random.split(rng, 3)
-    rng, *keys_ac = random.split(rng, 4)
-    rng, *keys_cr = random.split(rng, 3)
     
     temp_val = temp.apply_fn({"params": temp.params})
 
@@ -103,7 +90,6 @@ def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
         q = jnp.minimum(q1, q2)
         
         
-        
         actor_loss = (log_probs * temp_val - q).mean()
 
         return actor_loss, {
@@ -117,7 +103,6 @@ def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
     return rng, actor_new, info
 
 def temp_update(temp, entropy, target_entropy):
-    
     
     def temperature_loss_fn(temp_params):
         temperature = temp.apply_fn({'params': temp_params})
