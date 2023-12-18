@@ -9,7 +9,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 
 from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 from jsac.helpers.logger import Logger
-from jsac.envs.isaac_min_time_reacher.min_reacher_env import CarterMinTimeReacherEnv
+from jsac.envs.isaac_reacher_env.reacher_env import CarterReacherEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 from tensorboardX import SummaryWriter
@@ -35,35 +35,35 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='isaac_min_reacher_jsac_4', type=str)
-    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--name', default='carter_reacher', type=str)
+    parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--image_height', default=160, type=int)
     parser.add_argument('--image_width', default=90, type=int)
     parser.add_argument('--stack_frames', default=3, type=int)
-    parser.add_argument('--episode_steps', default=300, type=int)
+    parser.add_argument('--episode_steps', default=400, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=200000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=250000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=3000, type=int)
-    parser.add_argument('--env_steps', default=200000, type=int)
+    parser.add_argument('--init_steps', default=5000, type=int)
+    parser.add_argument('--env_steps', default=1000000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
     parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=5e-4, type=float)
+    parser.add_argument('--critic_lr', default=1e-4, type=float)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=5e-4, type=float)
-    parser.add_argument('--actor_update_freq', default=1, type=int)
+    parser.add_argument('--actor_lr', default=3e-4, type=float)
+    parser.add_argument('--actor_update_freq', default=3, type=int)
     parser.add_argument('--use_critic_encoder', default=True, 
                         action='store_true')
     
@@ -80,11 +80,11 @@ def parse_args():
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=3000, type=int)
+    parser.add_argument('--xtick', default=4000, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
-    parser.add_argument('--save_model', default=False, action='store_true')
-    parser.add_argument('--save_model_freq', default=50000, type=int)
+    parser.add_argument('--save_model', default=True, action='store_true')
+    parser.add_argument('--save_model_freq', default=25000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
@@ -95,7 +95,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def main(seed=-1, env=None):
+def main(seed=-1):
     args = parse_args()
 
     assert args.mode == MODE.IMG_PROP
@@ -138,6 +138,11 @@ def main(seed=-1, env=None):
     else:
         L = Logger(args.work_dir, args.xtick, vars(args), 
                    args.save_tensorboard, args.save_wandb)
+
+    env = CarterReacherEnv(scene_path="/home/isaac/.local/share/ov/pkg/isaac_sim-2023.1.0-hotfix.1/reacher_st/JSAC/jsac/envs/isaac_reacher_env/arena2.usd",
+                           seed=args.seed,
+                           image_width=args.image_width,
+                           image_height=args.image_height)
     
     env = WrappedEnv(env,
                      episode_max_steps=args.episode_steps, 
@@ -218,22 +223,13 @@ def main(seed=-1, env=None):
     end_time = time.time()
     print(f'\nFinished in {end_time - task_start_time}s')
 
+    env.close()
+
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
 
-    env = CarterMinTimeReacherEnv(scene_path="/home/fahim/.local/share/ov/pkg/isaac_sim-2023.1.0-hotfix.1/JSAC/jsac/envs/isaac_min_time_reacher/arena4.usd",
-                           seed=0,
-                           image_width=160,
-                           image_height=90,
-                           headless=False,
-                           min_target_size=0.4)
-    for i in range(5):
-        env.seed(i)
-        main(i, env)
-        time.sleep(10)
-
-    env.close()
+    main()
 
 
 

@@ -92,7 +92,7 @@ class CarterMinTimeReacherEnv(gymnasium.Env):
         self._camera.initialize()
 
         img = None
-        for i in range(10):
+        for i in range(3):
             self._world.step(render=True)
             img = self._camera.get_rgb()
         

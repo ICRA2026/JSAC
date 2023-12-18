@@ -77,6 +77,10 @@ class EnvSpec():
                  env_spec, 
                  observation_space, 
                  action_space):
+    def __init__(self, 
+                 env_spec, 
+                 observation_space, 
+                 action_space):
         self._observation_space = observation_space
         self._action_space = action_space
         self._unwrapped_spec = env_spec

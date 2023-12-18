@@ -4,6 +4,7 @@ import flax
 import flax.linen as nn
 import jax
 import jax
+import jax
 import jax.numpy as jnp
 from jax import random, vmap 
 import functools
@@ -15,6 +16,13 @@ class MODE:
 
 def default_init(scale: Optional[float] = jnp.sqrt(2)):
     return nn.initializers.orthogonal(scale)
+
+
+@functools.partial(jax.jit, static_argnames=('image_shape'))
+def augment(image, start_h, start_w, image_shape):
+    return jax.lax.dynamic_slice(image, 
+                                 (start_h, start_w, 0), 
+                                 image_shape)
 
 
 @functools.partial(jax.jit, static_argnames=('image_shape'))
@@ -102,7 +110,9 @@ class Encoder(nn.Module):
                         kernel_size=(kernel_size, kernel_size),
                         strides=stride,
                         padding=0,  
+                        padding=0,  
                         kernel_init=nn.initializers
+                        .delta_orthogonal(), 
                         .delta_orthogonal(), 
                         name=layer_name 
             )(x)
@@ -196,6 +206,7 @@ class ActorModel(nn.Module):
         ) * (log_std + 1)
 
         std = jnp.exp(log_std)
+        noise = random.normal(keys[0], mu.shape)
         noise = random.normal(keys[0], mu.shape)
         pi = mu + noise * std
 

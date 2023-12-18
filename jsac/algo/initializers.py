@@ -16,6 +16,9 @@ import os
 def get_init_data(init_image_shape, 
                   init_proprioception_shape, 
                   mode):
+def get_init_data(init_image_shape, 
+                  init_proprioception_shape, 
+                  mode):
     init_image = None
     init_proprioception = None 
 
@@ -43,6 +46,9 @@ def init_inference_actor(rng,
                        mode)
     
     init_image, init_proprioception = get_init_data(
+        init_image_shape, 
+        init_proprioception_shape, 
+        mode)
         init_image_shape, 
         init_proprioception_shape, 
         mode)
@@ -155,8 +161,12 @@ def init_actor(rng,
                        mode)
 
     rng, *keys = random.split(rng, 5)
+    rng, *keys = random.split(rng, 5)
     
     init_image, init_proprioception = get_init_data(
+        init_image_shape, 
+        init_proprioception_shape, 
+        mode)
         init_image_shape, 
         init_proprioception_shape, 
         mode)
@@ -174,6 +184,9 @@ def init_actor(rng,
 
     tx = optax.adam(learning_rate=learning_rate)
     
+    return rng, TrainState.create(apply_fn=model.apply, 
+                                  params=params, 
+                                  tx=tx)
     return rng, TrainState.create(apply_fn=model.apply, 
                                   params=params, 
                                   tx=tx)
@@ -211,6 +224,9 @@ def init_critic(rng,
         init_image_shape, 
         init_proprioception_shape, 
         mode)
+        init_image_shape, 
+        init_proprioception_shape, 
+        mode)
     
     params = model.init(keys[1], 
                         keys[2:],
@@ -226,6 +242,9 @@ def init_critic(rng,
     return rng, TrainState.create(apply_fn=model.apply, 
                                   params=params, 
                                   tx=tx)
+    return rng, TrainState.create(apply_fn=model.apply, 
+                                  params=params, 
+                                  tx=tx)
 
 
 def init_temperature(rng, learning_rate, alpha=1.0):
@@ -235,6 +254,9 @@ def init_temperature(rng, learning_rate, alpha=1.0):
 
     tx = optax.adam(learning_rate=learning_rate)
 
+    return rng, TrainState.create(apply_fn=model.apply, 
+                                  params=params, 
+                                  tx=tx)
     return rng, TrainState.create(apply_fn=model.apply, 
                                   params=params, 
                                   tx=tx)

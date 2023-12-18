@@ -39,12 +39,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # environment
     parser.add_argument('--name', default='create2_orin_visual_back_reacher', type=str)
-    parser.add_argument('--seed', default=1, type=int)
+    parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-    parser.add_argument('--image_height', default=90, type=int)
-    parser.add_argument('--image_width', default=120, type=int)
+    parser.add_argument('--image_height', default=120, type=int)
+    parser.add_argument('--image_width', default=160, type=int)
     parser.add_argument('--stack_frames', default=3, type=int)
 
     parser.add_argument('--camera_id', default=0, type=int)
@@ -61,9 +61,9 @@ def parse_args():
     parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=15000, type=int)
+    parser.add_argument('--init_steps', default=1000, type=int)
     parser.add_argument('--env_steps', default=100000, type=int)
-    parser.add_argument('--task_timeout_mins', default=100, type=int)
+    parser.add_argument('--task_timeout_mins', default=80, type=int)
 
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
@@ -71,12 +71,12 @@ def parse_args():
     parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=3e-4, type=float)
+    parser.add_argument('--critic_lr', default=6e-4, type=float)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=3e-4, type=float)
+    parser.add_argument('--actor_lr', default=6e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--use_critic_encoder', default=True, 
                         action='store_true')
@@ -95,7 +95,7 @@ def parse_args():
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
     parser.add_argument('--xtick', default=1000, type=int)
-    parser.add_argument('--save_wandb', default=False, action='store_true')
+    parser.add_argument('--save_wandb', default=True, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--save_model_freq', default=20000, type=int)
@@ -208,10 +208,7 @@ def main(seed=-1):
 
     while env.total_steps <= args.env_steps:
         t1 = time.time()
-        if env.total_steps < args.init_steps:
-            action = np.clip(np.random.normal(0, 1, (action_dim,)), -1, 1)
-        else:
-            action = agent.sample_actions((image, proprioception))
+        action = agent.sample_actions((image, proprioception))
         t2 = time.time()
         (next_image, next_proprioception), reward, done, info = env.step(action)
         t3 = time.time()
