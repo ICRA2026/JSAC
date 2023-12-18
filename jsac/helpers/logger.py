@@ -60,11 +60,19 @@ class MetersGroup(object):
         self._file_name = file_name
         self._formating = formating
         self._meters = defaultdict(AverageMeter)
-        self._value_items = ['num_updates', 'battery_charge', 'episode', 
-                             'episode_steps', 'duration', 'return', 'step', 
+        self._value_items = ['num_updates', 
+                             'battery_charge', 
+                             'episode', 
+                             'episode_steps', 
+                             'duration', 
+                             'return', 
+                             'step', 
                              'elapsed_time']
-        self._int_value_items = ['num_updates', 'battery_charge', 'episode', 
-                             'episode_steps', 'step']
+        self._int_value_items = ['num_updates', 
+                                 'battery_charge', 
+                                 'episode', 
+                                 'episode_steps', 
+                                 'step']
 
     def log(self, key, value, n=1):
         if key in self._value_items:
@@ -127,9 +135,16 @@ class MetersGroup(object):
 
 
 class Logger(object):
-    def __init__(self, log_dir, xtick, args, use_tb=False, 
-                 use_wandb=False, wandb_project_name='', wandb_run_name='', 
-                 wandb_resume=False, config='rl'):
+    def __init__(self, 
+                 log_dir, 
+                 xtick, 
+                 args, 
+                 use_tb=False, 
+                 use_wandb=False, 
+                 wandb_project_name='', 
+                 wandb_run_name='', 
+                 wandb_resume=False, 
+                 config='rl'):
         
         self._log_queue = Queue()
         self._log_dir = log_dir
@@ -201,7 +216,7 @@ class Logger(object):
                 cfl.write(f'{key} -> {value}')
                 cfl.write('\n\n')
 
-        self._plot_path = os.path.join(self._log_dir, 'learning_curve') 
+        self._plot_path = os.path.join(self._log_dir, 'learning_curve.png') 
 
     def _run(self):
         self._init()
@@ -231,7 +246,7 @@ class Logger(object):
                     self._episode_steps.append(v)
 
                 if isinstance(v, jaxlib.xla_extension.ArrayImpl):
-                        v = v.item()
+                    v = v.item()
                 self._log(f'{tag}/{k}', v, step)
 
             if data['dump'] == True:
@@ -257,7 +272,9 @@ class Logger(object):
         self._eval_mg.dump(step, 'eval', self._sw, self._use_wandb)
 
     def _plot_returns(self):
-        show_learning_curve(self._plot_path, self._returns, self._episode_steps, 
+        show_learning_curve(self._plot_path, 
+                            self._returns, 
+                            self._episode_steps, 
                             self._xtick)
 
     def close(self):
