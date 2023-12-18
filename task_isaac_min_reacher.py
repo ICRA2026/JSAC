@@ -35,7 +35,7 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='isaac_min_reacher_jsac_3', type=str)
+    parser.add_argument('--name', default='isaac_min_reacher_jsac_4', type=str)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
@@ -46,11 +46,11 @@ def parse_args():
     parser.add_argument('--episode_steps', default=300, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=75000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=200000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=3000, type=int)
-    parser.add_argument('--env_steps', default=75000, type=int)
+    parser.add_argument('--env_steps', default=200000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
@@ -228,7 +228,7 @@ if __name__ == '__main__':
                            image_height=90,
                            headless=False,
                            min_target_size=0.4)
-    for i in range(1):
+    for i in range(5):
         env.seed(i)
         main(i, env)
         time.sleep(10)

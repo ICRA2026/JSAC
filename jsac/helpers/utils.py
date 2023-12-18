@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 import collections
 from gym.core import Env
 import time
-import cv2
-
+import seaborn as sns
+import pandas as pd
+from statistics import mean
 
 class MODE:
     IMG = 'img'
@@ -28,54 +29,54 @@ def set_seed_everywhere(seed, env=None):
     if env is not None:
         env.seed(seed)
 
-def smoothed_curve(returns, ep_lens, x_tick=5000, window_len=5000):
-    """
-    Args:
-        returns: 1-D numpy array with episodic returs
-        ep_lens: 1-D numpy array with episodic returs
-        x_tick (int): Bin size
-        window_len (int): Length of averaging window
-    Returns:
-        A numpy array
-    """
+def show_learning_curve(fname, 
+                        returns, 
+                        ep_lens, 
+                        xtick):
+    sns.set(rc={'figure.figsize':(10, 7)})
+    sns.set_style("whitegrid")
+
+    # returns = np.array(returns, dtype=np.float32)
+    # ep_lens = np.array(ep_lens, dtype=np.int32)
+
+    df = pd.DataFrame(columns=["Step", "Return"])
+
+    steps = 0
     rets = []
-    x = []
-    cum_episode_lengths = np.cumsum(ep_lens)
-
-    if cum_episode_lengths[-1] >= x_tick:
-        y = cum_episode_lengths[-1] + 1
-        steps_show = np.arange(x_tick, y, x_tick)
-
-        for i in range(len(steps_show)):
-            rets_in_window = returns[(cum_episode_lengths > max(0, x_tick * (i + 1) - window_len)) *
-                                     (cum_episode_lengths < x_tick * (i + 1))]
-            if rets_in_window.any():
-                rets.append(np.mean(rets_in_window))
-                x.append((i+1) * x_tick)
-
-    return np.array(rets), np.array(x)
-
-def show_learning_curve(fname, rets, ep_lens, xtick, xlimit=None, ylimit=None, save_fig=True):
-        plot_rets, plot_x = smoothed_curve(
-                np.array(rets), np.array(ep_lens), x_tick=xtick, window_len=xtick)
+    end_step = xtick
+    for (i, epi_s) in enumerate(ep_lens):
+        steps += epi_s 
+        ret = returns[i]  
+        if steps >= end_step:
+            if len(rets) > 0:
+                df = df.append({'Step':end_step, 'Return':mean(rets)}, 
+                                ignore_index=True)
+                rets = []
+            while end_step < steps:
+                end_step += xtick
         
-        if len(plot_rets):
-            plt.clf()
-            if xlimit is not None:
-                plt.xlim(xlimit)
-        
-            if ylimit is not None:
-                plt.ylim(ylimit)
-                
-            plt.plot(plot_x, plot_rets)
-            plt.pause(0.001)
-            if save_fig:
-                plt.savefig(fname)
+        rets.append(ret) 
+    df = df.append({'Step':end_step, 'Return':mean(rets)},
+                   ignore_index=True)
+    
+
+    ax1 = sns.lineplot(x="Step", y='Return', data=df, 
+                    color=sns.color_palette('bright')[0], 
+                    linewidth=1.5, errorbar=None)
+
+    # ax1.get_legend().remove() 
+    plt.title('Learning Curve')
+    plt.savefig(fname)
+    plt.close()
+
 
 ## SRC: https://github.com/kindredresearch/SenseAct/blob/master/senseact/utils.py
 
 class EnvSpec():
-    def __init__(self, env_spec, observation_space, action_space):
+    def __init__(self, 
+                 env_spec, 
+                 observation_space, 
+                 action_space):
         self._observation_space = observation_space
         self._action_space = action_space
         self._unwrapped_spec = env_spec

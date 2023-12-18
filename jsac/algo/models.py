@@ -3,20 +3,31 @@ from typing import Optional, Sequence
 import flax
 import flax.linen as nn
 import jax
+import jax
 import jax.numpy as jnp
-from jax import random
-from jsac.helpers.utils import MODE
+from jax import random, vmap 
+import functools
 
+class MODE:
+    IMG = 'img'
+    IMG_PROP = 'img_prop'
+    PROP = 'prop'
 
 def default_init(scale: Optional[float] = jnp.sqrt(2)):
     return nn.initializers.orthogonal(scale)
+
+
+@functools.partial(jax.jit, static_argnames=('image_shape'))
+def augment(image, start_h, start_w, image_shape):
+    return jax.lax.dynamic_slice(image, 
+                                 (start_h, start_w, 0), 
+                                 image_shape)
 
 
 class SpatialSoftmax(nn.Module):
     height: float
     width: float
     channel: float
-    temp: float = 1.0
 
     def setup(self):
       pos_x, pos_y = jnp.meshgrid(
@@ -26,26 +37,17 @@ class SpatialSoftmax(nn.Module):
       self._pos_x = pos_x.reshape(self.height*self.width)
       self._pos_y = pos_y.reshape(self.height*self.width)
 
-    #   self._temperature = self.param(
-    #       'temperature', 
-    #       nn.initializers.constant(self.temp), (1,)) 
-
     @nn.compact
     def __call__(self, feature):  
         feature = feature.transpose(0, 3, 1, 2)
         feature = feature.reshape(-1, self.height*self.width)
-
-        # feature = feature/self._temperature
-    
         softmax_attention = nn.activation.softmax(feature, axis = -1)
-
         expected_x = jnp.sum(self._pos_x*softmax_attention, axis = 1, 
                              keepdims=True)
         expected_y = jnp.sum(self._pos_y*softmax_attention, axis = 1,
                              keepdims=True)
-
-        expected_xy = jnp.concatenate(axis = 1, arrays=(expected_x, expected_y))
-        
+        expected_xy = jnp.concatenate(axis = 1, 
+                                      arrays=(expected_x, expected_y))
         feature_keypoints = expected_xy.reshape(-1, self.channel * 2) 
         
         return feature_keypoints
@@ -53,18 +55,45 @@ class SpatialSoftmax(nn.Module):
 
 class Encoder(nn.Module):
     net_params: dict 
-    spatial_softmax: bool = True
+    rad_offset: float = 0.01
     mode: str = MODE.IMG_PROP
 
     @nn.compact
-    def __call__(self, images, proprioceptions, stop_gradient=False):          
+    def __call__(self, 
+                 keys,
+                 images, 
+                 proprioceptions, 
+                 apply_rad=False,
+                 stop_gradient=False):          
+        
         if self.mode == MODE.PROP:
             return proprioceptions
         
         conv_params = self.net_params['conv']
+        
+        batch_size, height, width, channel = images.shape
+
+        rad_h = max(round(self.rad_offset * height), 1)
+        rad_w = max(round(self.rad_offset * width), 1)
+        rad_image_shape = ((height - (2 * rad_h)), 
+                           (width - (2 * rad_w)), 
+                           channel)   
+        get_augments = vmap(augment, in_axes=(0, 0, 0, None))
+            
+        if not apply_rad:
+            # Still need to crop the images
+            crop_height = jnp.ones((batch_size,), dtype=jnp.int32) * rad_h
+            crop_width = jnp.ones((batch_size,), dtype=jnp.int32) * rad_w
+        else:
+            crop_height = random.randint(keys[0], (batch_size,), 0, rad_h+1)
+            crop_width = random.randint(keys[1], (batch_size,), 0, rad_w+1)
+
+        images = get_augments(images,
+                              crop_height,
+                              crop_width,
+                              rad_image_shape)
 
         x = images / 255.0
-        height, width, channel = images.shape[1:]
 
         for i, (_, out_channel, kernel_size, stride) in enumerate(conv_params):
             layer_name = 'encoder_conv_' + str(i)
@@ -72,24 +101,18 @@ class Encoder(nn.Module):
             x = nn.Conv(features=out_channel, 
                         kernel_size=(kernel_size, kernel_size),
                         strides=stride,
-                        padding=0,
+                        padding=0,  
                         kernel_init=nn.initializers
-                        .delta_orthogonal(),
+                        .delta_orthogonal(), 
                         name=layer_name 
             )(x)
 
             if i < len(conv_params) - 1:
                 x = nn.relu(x)
 
-        if self.spatial_softmax:
-            b, height, width, channel = x.shape
-            x = SpatialSoftmax(height=width, width=height, channel=channel, 
-                               name='encoder_spatialsoftmax')(x)
-        else:
-            x = x.reshape((x.shape[0], -1))
-            x = nn.Dense(self.net_params['latent'], kernel_init=default_init(), 
-                         name='encoder_dense')(x)
-            x = nn.LayerNorm(name='encoder_layernorm')(x)
+        b, height, width, channel = x.shape
+        x = SpatialSoftmax(width, height, channel, 
+                            name='encoder_spatialsoftmax')(x)
 
         if stop_gradient:
             x = jax.lax.stop_gradient(x)
@@ -139,26 +162,33 @@ def squash(mu, pi, log_pi):
 
 
 class ActorModel(nn.Module):
-    action_dim: int
     net_params: dict 
-    spatial_softmax: bool = True
+    action_dim: int
+    rad_offset: float = 0.01
     mode: str = MODE.IMG_PROP
 
     @nn.compact
-    def __call__(self, images, proprioceptions, deterministic=False, key=None, stop_gradient=False):
-        
-        latents = Encoder(self.net_params, self.spatial_softmax,
-                          name='encoder',
-                          mode=self.mode)(images, proprioceptions, stop_gradient)
+    def __call__(self, 
+                 keys, 
+                 images, 
+                 proprioceptions, 
+                 apply_rad=False,
+                 stop_gradient=False):
+
+        latents = Encoder(self.net_params, 
+                          self.rad_offset,
+                          self.mode,
+                          name='encoder')(keys[1:],
+                                          images, 
+                                          proprioceptions, 
+                                          apply_rad,
+                                          stop_gradient)
         
         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
 
-        mu = nn.Dense(self.action_dim, kernel_init=default_init(0.0))(outputs)
-        
-        if deterministic:
-            return nn.tanh(mu)
-
-        log_std = nn.Dense(self.action_dim, kernel_init=default_init(0.0))(outputs)
+        x = nn.Dense(self.action_dim * 2, 
+                     kernel_init=default_init(0.0))(outputs)
+        mu, log_std = jnp.split(x, 2, -1)
 
         log_std = nn.tanh(log_std)
         log_std = LOG_STD_MIN + 0.5 * (
@@ -166,7 +196,7 @@ class ActorModel(nn.Module):
         ) * (log_std + 1)
 
         std = jnp.exp(log_std)
-        noise = random.normal(key, mu.shape)
+        noise = random.normal(keys[0], mu.shape)
         pi = mu + noise * std
 
         log_pi = gaussian_logprob(noise, log_std)
@@ -190,22 +220,28 @@ class QFunction(nn.Module):
 
 
 class CriticModel(nn.Module):
-    action_dim: int
     net_params: dict  
-    spatial_softmax: bool = True
+    action_dim: int
+    rad_offset: float = 0.01
     mode: str = MODE.IMG_PROP
-    num_qs: int = 2
 
     @nn.compact
-    def __call__(self, images, proprioceptions, actions, stop_gradient=False):
-        latents = Encoder(self.net_params, self.spatial_softmax, name='encoder',
-                          mode=self.mode)(images, proprioceptions, stop_gradient)
+    def __call__(self, 
+                 keys,
+                 images, 
+                 proprioceptions, 
+                 actions,  
+                 apply_rad=False,
+                 stop_gradient=False):
         
-        # VmapCritic = nn.vmap(QFunction, variable_axes={'params': 0},
-        #                      split_rngs={'params': True}, in_axes=None,
-        #                      out_axes=0, axis_size=self.num_qs)
-        
-        # qs = VmapCritic(self.net_params['mlp'])(latents, actions)
+        latents = Encoder(self.net_params, 
+                          self.rad_offset,
+                          self.mode,
+                          name='encoder')(keys,
+                                          images, 
+                                          proprioceptions, 
+                                          apply_rad,
+                                          stop_gradient)
 
         q1 = QFunction(self.net_params['mlp'])(latents, actions)
         q2 = QFunction(self.net_params['mlp'])(latents, actions)
