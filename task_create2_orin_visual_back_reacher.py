@@ -32,7 +32,7 @@ config = {
     
     'latent': 50,
 
-    'mlp': [512, 512],
+    'mlp': [1024, 1024],
 }
 
 def parse_args():
@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument('--dt', default=0.045, type=float)
     parser.add_argument('--min_target_size', default=0.2, type=float)
     parser.add_argument('--reset_penalty_steps', default=67, type=int)
-    parser.add_argument('--min_charge', default=910, type=int)
+    parser.add_argument('--min_charge', default=855, type=int)
     parser.add_argument('--reward', default=-1, type=float)
     parser.add_argument('--pause_before_reset', default=0, type=float)
     parser.add_argument('--pause_after_reset', default=0, type=float)
@@ -61,9 +61,9 @@ def parse_args():
     parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=1000, type=int)
+    parser.add_argument('--init_steps', default=5000, type=int)
     parser.add_argument('--env_steps', default=100000, type=int)
-    parser.add_argument('--task_timeout_mins', default=80, type=int)
+    parser.add_argument('--task_timeout_mins', default=500, type=int)
 
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
@@ -71,12 +71,12 @@ def parse_args():
     parser.add_argument('--rad_offset', default=0.01, type=float)
     
     # critic
-    parser.add_argument('--critic_lr', default=6e-4, type=float)
-    parser.add_argument('--critic_tau', default=0.005, type=float)
+    parser.add_argument('--critic_lr', default=1e-4, type=float)
+    parser.add_argument('--critic_tau', default=0.0075, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=6e-4, type=float)
+    parser.add_argument('--actor_lr', default=1e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--use_critic_encoder', default=True, 
                         action='store_true')
@@ -88,7 +88,7 @@ def parse_args():
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
-    parser.add_argument('--temp_lr', default=3e-4, type=float)
+    parser.add_argument('--temp_lr', default=1e-4, type=float)
     
     # misc
     parser.add_argument('--work_dir', default='.', type=str)
@@ -202,8 +202,10 @@ def main(seed=-1):
         agent = AsyncSACRADAgent(args)
 
     task_start_time = time.time()
-    task_end_time = task_start_time + (args.task_timeout_mins * 60)
+    # task_end_time = task_start_time + (args.task_timeout_mins * 60)
     update_paused = True
+    pause_for_update = True
+
     (image, proprioception) = env.reset()
 
     while env.total_steps <= args.env_steps:
@@ -240,15 +242,17 @@ def main(seed=-1):
             if rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:
                 break
                 
-            if time.time() > task_end_time or charge < args.min_charge:
-                rf = RF_END_RUN_W_SAVE
-                break
+            if charge < args.min_charge:
+                agent.pause_update()
+                
 
             if update_paused and env.total_steps >= args.init_steps \
                 and charge > args.min_charge:
                 agent.resume_update()
                 update_paused = False
-                time.sleep(20)
+                if pause_for_update:
+                    time.sleep(20)
+                    pause_for_update = False
 
         if not update_paused and env.total_steps >= args.init_steps:
             update_infos = agent.update()

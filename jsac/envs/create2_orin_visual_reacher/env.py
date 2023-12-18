@@ -50,8 +50,8 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         self._internal_timing = 0.015
         self._hsv_mask = ((35, 50, 150), (80, 165, 255))
         self._min_target_size = min_target_size
-        self._min_battery = 900
-        self._max_battery = 1650
+        self._min_battery = 850
+        self._max_battery = 1600
         self._dense_reward = dense_reward
 
         # get the opcode for our main action (only 1 action)
