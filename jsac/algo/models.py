@@ -14,7 +14,7 @@ class MODE:
     PROP = 'prop'
 
 def default_init(scale: Optional[float] = jnp.sqrt(2)):
-    return nn.initializers.orthogonal(scale)
+    return nn.initializers.orthogonal(scale, dtype=jnp.float32)
 
 
 @functools.partial(jax.jit, static_argnames=('image_shape'))
@@ -31,8 +31,8 @@ class SpatialSoftmax(nn.Module):
 
     def setup(self):
       pos_x, pos_y = jnp.meshgrid(
-         jnp.linspace(-1., 1., self.height),
-         jnp.linspace(-1., 1., self.width)
+         jnp.linspace(-1., 1., self.height, dtype=jnp.float32),
+         jnp.linspace(-1., 1., self.width, dtype=jnp.float32)
       )
       self._pos_x = pos_x.reshape(self.height*self.width)
       self._pos_y = pos_y.reshape(self.height*self.width)
@@ -41,13 +41,16 @@ class SpatialSoftmax(nn.Module):
     def __call__(self, feature):  
         feature = feature.transpose(0, 3, 1, 2)
         feature = feature.reshape(-1, self.height*self.width)
+    
         softmax_attention = nn.activation.softmax(feature, axis = -1)
+
         expected_x = jnp.sum(self._pos_x*softmax_attention, axis = 1, 
                              keepdims=True)
         expected_y = jnp.sum(self._pos_y*softmax_attention, axis = 1,
                              keepdims=True)
-        expected_xy = jnp.concatenate(axis = 1, 
-                                      arrays=(expected_x, expected_y))
+
+        expected_xy = jnp.concatenate(axis = 1, arrays=(expected_x, expected_y))
+        
         feature_keypoints = expected_xy.reshape(-1, self.channel * 2) 
         
         return feature_keypoints
@@ -85,15 +88,15 @@ class Encoder(nn.Module):
             crop_height = jnp.ones((batch_size,), dtype=jnp.int32) * rad_h
             crop_width = jnp.ones((batch_size,), dtype=jnp.int32) * rad_w
         else:
-            crop_height = random.randint(keys[0], (batch_size,), 0, rad_h+1)
-            crop_width = random.randint(keys[1], (batch_size,), 0, rad_w+1)
+            crop_height = random.randint(keys[0], (batch_size,), 0, rad_h+1, jnp.int32)
+            crop_width = random.randint(keys[1], (batch_size,), 0, rad_w+1, jnp.int32)
 
         images = get_augments(images,
                               crop_height,
                               crop_width,
                               rad_image_shape)
 
-        x = images / 255.0
+        x = images.astype(jnp.float32) / 255.0
 
         for i, (_, out_channel, kernel_size, stride) in enumerate(conv_params):
             layer_name = 'encoder_conv_' + str(i)
@@ -103,7 +106,7 @@ class Encoder(nn.Module):
                         strides=stride,
                         padding=0,  
                         kernel_init=nn.initializers
-                        .delta_orthogonal(), 
+                        .delta_orthogonal(dtype=jnp.float32), 
                         name=layer_name 
             )(x)
 
@@ -185,9 +188,11 @@ class ActorModel(nn.Module):
                                           stop_gradient)
         
         outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
+        l = self.net_params['mlp'][-1]
+        init = nn.initializers.zeros_init()
 
         x = nn.Dense(self.action_dim * 2, 
-                     kernel_init=default_init(0.0))(outputs)
+                     kernel_init=init, dtype=jnp.float32)(outputs)
         mu, log_std = jnp.split(x, 2, -1)
 
         log_std = nn.tanh(log_std)
@@ -196,7 +201,7 @@ class ActorModel(nn.Module):
         ) * (log_std + 1)
 
         std = jnp.exp(log_std)
-        noise = random.normal(keys[0], mu.shape)
+        noise = random.normal(keys[0], mu.shape, dtype=jnp.float32) 
         pi = mu + noise * std
 
         log_pi = gaussian_logprob(noise, log_std)
@@ -256,5 +261,5 @@ class Temperature(nn.Module):
     def __call__(self) -> jnp.ndarray:
         log_temp = self.param(
             'log_temp', 
-            init_fn=lambda key: jnp.full((), jnp.log(self.initial_temperature)))
+            init_fn=lambda key: jnp.full((), jnp.log(self.initial_temperature), dtype=jnp.float32))
         return jnp.exp(log_temp)
