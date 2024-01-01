@@ -1,6 +1,5 @@
 import jax
 from jax import random, numpy as jnp
-from flax.core.frozen_dict import freeze
 
 
 def critic_update(rng, 
@@ -58,13 +57,13 @@ def critic_update(rng,
     return rng, critic_new, info
 
 
-def actor_update(rng, actor, critic, temp, batch, use_critic_encoder=True):
+def actor_update(rng, actor, critic, temp, batch, train_actor_encoder=False):
     rng, *keys_ac = random.split(rng, 4)
     rng, *keys_cr = random.split(rng, 3)
     
     temp_val = temp.apply_fn({"params": temp.params})
 
-    if use_critic_encoder:
+    if not train_actor_encoder:
         params = actor.params
         params['encoder'] = critic.params['encoder']
         actor = actor.replace(params=params)

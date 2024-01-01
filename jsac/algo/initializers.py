@@ -2,13 +2,8 @@ from jax import random
 import optax
 from jsac.algo.models import ActorModel, CriticModel, Temperature
 from flax.training.train_state import TrainState
-from flax.core.frozen_dict import freeze
-from flax import traverse_util
 from jsac.helpers.utils import MODE
 import numpy as np
-import jax.numpy as jnp 
-import torch
-import os
 
 
 def get_init_data(init_image_shape, 
@@ -62,7 +57,7 @@ def init_actor(rng,
                action_dim, 
                net_params, 
                rad_offset,  
-               use_critic_encoder=True, 
+               train_actor_encoder=False, 
                mode=MODE.IMG_PROP):
     
     model = ActorModel(net_params,
@@ -82,7 +77,7 @@ def init_actor(rng,
                         init_image,
                         init_proprioception)['params']
     
-    if use_critic_encoder:
+    if train_actor_encoder:
         params['encoder'] = critic.params['encoder']
 
     tx = optax.adam(learning_rate=learning_rate)

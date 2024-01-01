@@ -14,7 +14,6 @@ import time
 import os
 import shutil
 import jax.numpy as jnp
-from flax.core.frozen_dict import freeze
 import multiprocessing as mp
 from threading import Thread
 from flax.training import orbax_utils
@@ -39,7 +38,7 @@ class BaseAgent:
         self._actor_update_freq = args.actor_update_freq
         self._critic_target_update_freq = args.critic_target_update_freq
         self._discount = args.discount
-        self._use_critic_encoder = args.use_critic_encoder
+        self._train_actor_encoder = args.train_actor_encoder
         self._critic_lr = args.critic_lr
         self._net_params = args.net_params
         self._spatial_softmax = args.spatial_softmax
@@ -51,7 +50,6 @@ class BaseAgent:
         self._model_dir = args.model_dir
         self._buffer_save_path = args.buffer_save_path
         self._buffer_load_path = args.buffer_load_path
-        self._total_env_steps = args.env_steps
 
         self._replay_buffer = None
         self._update_step = 0
@@ -105,7 +103,7 @@ class BaseAgent:
             self._action_dim, 
             self._net_params,
             self._rad_offset,  
-            self._use_critic_encoder, 
+            self._train_actor_encoder, 
             self._mode)
 
         self._rng, self._temp = init_temperature(
@@ -134,7 +132,7 @@ class BaseAgent:
             self._target_entropy,
             self._update_step % self._actor_update_freq == 0,
             self._update_step % self._critic_target_update_freq == 0,
-            self._use_critic_encoder)
+            self._train_actor_encoder)
 
         jax.block_until_ready(actor.params)
         self._actor = actor
@@ -437,7 +435,7 @@ def sample_actions(rng,
 
 @functools.partial(jax.jit, static_argnames=('update_actor',
                                              'update_target',
-                                             'use_critic_encoder',
+                                             'train_actor_encoder',
                                              'rad_offset'))
 def update_jit(rng, 
                actor, 
@@ -450,7 +448,7 @@ def update_jit(rng,
                target_entropy, 
                update_actor, 
                update_target, 
-               use_critic_encoder):
+               train_actor_encoder):
 
     rng, critic_new, critic_info = critic_update(
         rng, 
@@ -472,7 +470,7 @@ def update_jit(rng,
                                                   critic_new, 
                                                   temp,
                                                   batch, 
-                                                  use_critic_encoder)
+                                                  train_actor_encoder)
 
         new_temp, alpha_info = temp_update(temp, 
                                            actor_info['entropy'],
