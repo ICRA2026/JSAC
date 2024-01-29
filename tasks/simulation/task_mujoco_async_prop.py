@@ -11,7 +11,6 @@ from jsac.helpers.logger import Logger
 from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
-from tensorboardX import SummaryWriter
 import argparse
 import shutil
 import multiprocessing as mp
@@ -45,22 +44,21 @@ def parse_args():
     parser.add_argument('--replay_buffer_capacity', default=30000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=1000, type=int)
+    parser.add_argument('--init_steps', default=3000, type=int)
     parser.add_argument('--env_steps', default=30000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
+    parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
-    parser.add_argument('--critic_lr', default=5e-4, type=float)
+    parser.add_argument('--critic_lr', default=3e-4, type=float)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=5e-4, type=float)
+    parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    
-    # encoder
-    parser.add_argument('--encoder_tau', default=0.05, type=float)
+    parser.add_argument('--actor_sync_freq', default=20, type=int)
     
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
@@ -87,6 +85,7 @@ def parse_args():
     return args
 
 def main(seed=-1):
+    task_start_time = time.time()
     args = parse_args()
 
     assert args.mode == MODE.PROP
@@ -117,7 +116,12 @@ def main(seed=-1):
     make_dir(args.work_dir)
 
     if args.buffer_save_path:
+        if args.buffer_save_path == ".":
+            args.buffer_save_path = os.path.join(args.work_dir, 'buffers')
         make_dir(args.buffer_save_path)
+    
+    if args.buffer_load_path == ".":
+        args.buffer_load_path = os.path.join(args.work_dir, 'buffers')
 
     args.model_dir = os.path.join(args.work_dir, 'checkpoints') 
     args.net_params = config
@@ -149,7 +153,6 @@ def main(seed=-1):
     else:
         agent = AsyncSACRADAgent(args)
 
-    task_start_time = time.time()
     update_paused = True
     proprioception = env.reset()
 
@@ -175,7 +178,7 @@ def main(seed=-1):
             info['elapsed_time'] = time.time() - task_start_time
             L.push(info)
 
-        if env.total_steps >= args.init_steps:
+        if env.total_steps > args.init_steps:
             if update_paused:
                 agent.resume_update()
                 update_paused = False
@@ -213,9 +216,6 @@ def main(seed=-1):
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
-
-    # for i in range(15):
-    #     main(i)
 
     main()
 

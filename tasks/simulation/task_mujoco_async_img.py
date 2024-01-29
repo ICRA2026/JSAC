@@ -45,29 +45,28 @@ def parse_args():
     parser.add_argument('--stack_frames', default=3, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=30000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=50000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--env_steps', default=30000, type=int)
+    parser.add_argument('--init_steps', default=5000, type=int)
+    parser.add_argument('--env_steps', default=50000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
     parser.add_argument('--rad_offset', default=0.01, type=float)
+    parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
-    parser.add_argument('--critic_lr', default=1e-3, type=float)
+    parser.add_argument('--critic_lr', default=3e-4, type=float)
     parser.add_argument('--critic_tau', default=0.01, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=1e-3, type=float)
+    parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    parser.add_argument('--use_critic_encoder', default=True, 
-                        action='store_true')
+    parser.add_argument('--actor_sync_freq', default=20, type=int)
     
     # encoder
-    parser.add_argument('--encoder_tau', default=0.05, type=float)
     parser.add_argument('--spatial_softmax', default=True, action='store_true')
     
     # sac
@@ -95,6 +94,7 @@ def parse_args():
     return args
 
 def main(seed=-1):
+    task_start_time = time.time()
     args = parse_args()
 
     assert args.mode == MODE.IMG
@@ -123,7 +123,12 @@ def main(seed=-1):
     make_dir(args.work_dir)
 
     if args.buffer_save_path:
+        if args.buffer_save_path == ".":
+            args.buffer_save_path = os.path.join(args.work_dir, 'buffers')
         make_dir(args.buffer_save_path)
+    
+    if args.buffer_load_path == ".":
+        args.buffer_load_path = os.path.join(args.work_dir, 'buffers')
 
     args.model_dir = os.path.join(args.work_dir, 'checkpoints') 
     args.net_params = config
@@ -157,7 +162,6 @@ def main(seed=-1):
     else:
         agent = AsyncSACRADAgent(args)
 
-    task_start_time = time.time()
     update_paused = True
     image = env.reset()
 
@@ -183,7 +187,7 @@ def main(seed=-1):
             info['elapsed_time'] = time.time() - task_start_time
             L.push(info)
 
-        if env.total_steps >= args.init_steps:
+        if env.total_steps > args.init_steps:
             if update_paused:
                 agent.resume_update()
                 update_paused = False

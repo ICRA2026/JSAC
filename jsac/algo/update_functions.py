@@ -1,5 +1,6 @@
 import jax
 from jax import random, numpy as jnp
+import flax
 
 
 def critic_update(rng, 
@@ -8,7 +9,8 @@ def critic_update(rng,
                   critic_target, 
                   temp, 
                   batch, 
-                  discount):
+                  discount,
+                  calculate_grad_norm=True):
 
     rng, *keys_ac = random.split(rng, 4)
     rng, *keys_crt = random.split(rng, 3)
@@ -19,7 +21,7 @@ def critic_update(rng,
         keys_ac,
         batch.next_images, 
         batch.next_proprioceptions,
-        True)  
+        True)                           # apply_rad
 
     target_Q1, target_Q2 = critic_target.apply_fn(
         {"params": critic_target.params}, 
@@ -27,7 +29,7 @@ def critic_update(rng,
         batch.next_images, 
         batch.next_proprioceptions, 
         next_actions,
-        True)
+        True)                           # apply_rad
     
     temp_val = temp.apply_fn({"params": temp.params})
     target_V = jnp.minimum(target_Q1, target_Q2) - temp_val * next_log_probs
@@ -41,7 +43,7 @@ def critic_update(rng,
             batch.images, 
             batch.proprioceptions, 
             batch.actions,
-            True)
+            True)                       # apply_rad
         
         critic_loss = ((q1 - target_Q)**2 + (q2 - target_Q)**2).mean()
 
@@ -53,20 +55,29 @@ def critic_update(rng,
 
     grads, info = jax.grad(critic_loss_fn, has_aux=True)(critic.params)
     critic_new = critic.apply_gradients(grads=grads)
-
+    if calculate_grad_norm:
+        itr = flax.traverse_util.TraverseTree().iterate(grads)
+        info['critic_grad_norm'] = jnp.sqrt(sum([(jnp.linalg.norm(grad)**2) 
+                                                 for grad in itr]))
     return rng, critic_new, info
 
 
-def actor_update(rng, actor, critic, temp, batch, train_actor_encoder=False):
+def actor_update(rng, 
+                 actor, 
+                 critic, 
+                 temp, 
+                 batch,  
+                 calculate_grad_norm=True):
     rng, *keys_ac = random.split(rng, 4)
     rng, *keys_cr = random.split(rng, 3)
     
     temp_val = temp.apply_fn({"params": temp.params})
 
-    if not train_actor_encoder:
-        params = actor.params
-        params['encoder'] = critic.params['encoder']
-        actor = actor.replace(params=params)
+    # The actor's encoder parameters are not updated
+    # They are copied from critic's parameters
+    if 'encoder' in critic.params:
+        actor.params['encoder'] = critic.params['encoder']
+        actor = actor.replace(params=actor.params)
 
     def actor_loss_fn(actor_params):    
         _, actions, log_probs, _ = actor.apply_fn(
@@ -74,8 +85,8 @@ def actor_update(rng, actor, critic, temp, batch, train_actor_encoder=False):
             keys_ac,
             batch.images, 
             batch.proprioceptions,
-            True, 
-            True)
+            True,                       # apply rad
+            True)                       # stop_gradient to encoder
  
         q1, q2 = critic.apply_fn(
             {'params': critic.params}, 
@@ -83,12 +94,10 @@ def actor_update(rng, actor, critic, temp, batch, train_actor_encoder=False):
             batch.images, 
             batch.proprioceptions, 
             actions, 
-            True, 
-            True)
+            True)                       # apply rad
         
         q = jnp.minimum(q1, q2)
-        
-        
+                
         actor_loss = (log_probs * temp_val - q).mean()
 
         return actor_loss, {
@@ -98,6 +107,11 @@ def actor_update(rng, actor, critic, temp, batch, train_actor_encoder=False):
 
     grads, info = jax.grad(actor_loss_fn, has_aux=True)(actor.params)
     actor_new = actor.apply_gradients(grads=grads)
+
+    if calculate_grad_norm:
+        itr = flax.traverse_util.TraverseTree().iterate(grads)
+        info['actor_grad_norm'] = jnp.sqrt(sum([(jnp.linalg.norm(grad)**2) 
+                                                for grad in itr]))
 
     return rng, actor_new, info
 

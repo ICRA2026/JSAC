@@ -1,4 +1,5 @@
 from jax import random
+from jax import numpy as jnp
 import optax
 from jsac.algo.models import ActorModel, CriticModel, Temperature
 from flax.training.train_state import TrainState
@@ -21,6 +22,41 @@ def get_init_data(init_image_shape,
 
     return init_image, init_proprioception
     
+
+def init_critic(rng,
+                learning_rate, 
+                init_image_shape, 
+                init_proprioception_shape, 
+                action_dim, 
+                net_params, 
+                rad_offset, 
+                mode=MODE.IMG_PROP):
+
+    model = CriticModel(net_params, 
+                        action_dim, 
+                        rad_offset,  
+                        mode)
+    
+    rng, *keys = random.split(rng, 4)
+    init_actions = random.uniform(keys[0], (1, action_dim), dtype=jnp.float32)
+
+    init_image, init_proprioception = get_init_data(
+        init_image_shape, 
+        init_proprioception_shape, 
+        mode)
+    
+    params = model.init(keys[1], 
+                        keys[2:],
+                        init_image, 
+                        init_proprioception, 
+                        init_actions)['params']
+
+    tx = optax.adam(learning_rate=learning_rate)
+
+    return rng, TrainState.create(apply_fn=model.apply, 
+                                  params=params, 
+                                  tx=tx)
+
 
 def init_inference_actor(rng, 
                          init_image_shape, 
@@ -49,7 +85,6 @@ def init_inference_actor(rng,
     return rng, model
 
 def init_actor(rng, 
-               seed,
                critic, 
                learning_rate, 
                init_image_shape, 
@@ -57,7 +92,6 @@ def init_actor(rng,
                action_dim, 
                net_params, 
                rad_offset,  
-               train_actor_encoder=False, 
                mode=MODE.IMG_PROP):
     
     model = ActorModel(net_params,
@@ -77,47 +111,13 @@ def init_actor(rng,
                         init_image,
                         init_proprioception)['params']
     
-    if train_actor_encoder:
+    # We do not train the actor encoder. Instead we copy
+    # the encoder values from the critic.
+    if mode==MODE.IMG_PROP or mode==MODE.IMG:
         params['encoder'] = critic.params['encoder']
 
     tx = optax.adam(learning_rate=learning_rate)
     
-    return rng, TrainState.create(apply_fn=model.apply, 
-                                  params=params, 
-                                  tx=tx)
-
-
-def init_critic(rng,
-                seed, 
-                learning_rate, 
-                init_image_shape, 
-                init_proprioception_shape, 
-                action_dim, 
-                net_params, 
-                rad_offset, 
-                mode=MODE.IMG_PROP):
-
-    model = CriticModel(net_params, 
-                        action_dim, 
-                        rad_offset,  
-                        mode)
-    
-    rng, *keys = random.split(rng, 4)
-    init_actions = random.uniform(keys[0], (1, action_dim))
-
-    init_image, init_proprioception = get_init_data(
-        init_image_shape, 
-        init_proprioception_shape, 
-        mode)
-    
-    params = model.init(keys[1], 
-                        keys[2:],
-                        init_image, 
-                        init_proprioception, 
-                        init_actions)['params']
-
-    tx = optax.adam(learning_rate=learning_rate)
-
     return rng, TrainState.create(apply_fn=model.apply, 
                                   params=params, 
                                   tx=tx)

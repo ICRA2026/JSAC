@@ -26,8 +26,6 @@ class BaseAgent:
 
         self._seed = args.seed
         self._mode = args.mode
-        self._image_shape = args.image_shape
-        self._rad_offset = args.rad_offset
         self._proprioception_shape = args.proprioception_shape
         self._action_shape = args.action_shape
         self._action_dim = args.action_shape[-1]
@@ -37,19 +35,31 @@ class BaseAgent:
         self._critic_tau = args.critic_tau
         self._actor_update_freq = args.actor_update_freq
         self._critic_target_update_freq = args.critic_target_update_freq
-        self._discount = args.discount
-        self._train_actor_encoder = args.train_actor_encoder
-        self._critic_lr = args.critic_lr
+        self._discount = args.discount 
         self._net_params = args.net_params
-        self._spatial_softmax = args.spatial_softmax
+        self._critic_lr = args.critic_lr
         self._actor_lr = args.actor_lr
         self._temp_lr = args.temp_lr
+        self._calculate_grad_norm = args.calculate_grad_norm
         self._init_temperature = args.init_temperature
         self._sync_mode = args.sync_mode 
         self._load_model = args.load_model
         self._model_dir = args.model_dir
         self._buffer_save_path = args.buffer_save_path
         self._buffer_load_path = args.buffer_load_path
+
+        if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:
+            self._image_shape = args.image_shape
+            self._rad_offset = args.rad_offset
+            self._spatial_softmax = args.spatial_softmax
+        else:
+            self._image_shape = (0,0,0)
+            self._rad_offset = 0
+            self._spatial_softmax = False
+
+        if not self._sync_mode:
+            self._actor_sync_freq = args.actor_sync_freq
+
 
         self._replay_buffer = None
         self._update_step = 0
@@ -69,7 +79,6 @@ class BaseAgent:
     def _init_models(self, init_image_shape, init_proprioception_shape):
         self._rng, self._critic = init_critic(
             self._rng, 
-            self._seed,
             self._critic_lr, 
             init_image_shape,
             init_proprioception_shape, 
@@ -80,7 +89,6 @@ class BaseAgent:
 
         self._rng, self._critic_target = init_critic(
             self._rng, 
-            self._seed,
             self._critic_lr, 
             init_image_shape,
             init_proprioception_shape, 
@@ -95,15 +103,13 @@ class BaseAgent:
 
         self._rng, self._actor = init_actor(
             self._rng, 
-            self._seed,
             self._critic, 
             self._actor_lr, 
             init_image_shape,
             init_proprioception_shape, 
             self._action_dim, 
             self._net_params,
-            self._rad_offset,  
-            self._train_actor_encoder, 
+            self._rad_offset,   
             self._mode)
 
         self._rng, self._temp = init_temperature(
@@ -132,7 +138,7 @@ class BaseAgent:
             self._target_entropy,
             self._update_step % self._actor_update_freq == 0,
             self._update_step % self._critic_target_update_freq == 0,
-            self._train_actor_encoder)
+            self._calculate_grad_norm)
 
         jax.block_until_ready(actor.params)
         self._actor = actor
@@ -219,13 +225,20 @@ class SACRADAgent(BaseAgent):
                              next_proprioception, 
                              done))
 
-    def sample_actions(self, state):
-        self._rng, actions = sample_actions(
-            self._rng, 
-            self._actor.apply_fn, 
-            self._actor.params, 
-            state, self._mode)
-        
+    def sample_actions(self, state, deterministic=False):
+        if not deterministic:
+            self._rng, actions = sample_actions(
+                self._rng, 
+                self._actor.apply_fn, 
+                self._actor.params,
+                state, self._mode)
+        else:
+            self._rng, actions = sample_deterministic_actions(
+                self._rng, 
+                self._actor.apply_fn, 
+                self._actor.params,
+                state, self._mode)
+
         return np.asarray(actions)
     
     def checkpoint(self, step):
@@ -301,15 +314,25 @@ class AsyncSACRADAgent(BaseAgent):
                              next_proprioception, 
                              done))
 
-    def sample_actions(self, state):
-        with self._actor_lock:
-            self._rng, actions = sample_actions(
-                self._rng, 
-                self._actor_model.apply, 
-                self._actor_params,
-                state, self._mode)
+
+    def sample_actions(self, state, deterministic=False):
+        if not deterministic:
+            with self._actor_lock:
+                self._rng, actions = sample_actions(
+                    self._rng, 
+                    self._actor_model.apply, 
+                    self._actor_params,
+                    state, self._mode)
+        else:
+            with self._actor_lock:
+                self._rng, actions = sample_deterministic_actions(
+                    self._rng, 
+                    self._actor_model.apply, 
+                    self._actor_params,
+                    state, self._mode)
 
         return np.asarray(actions)
+    
 
     def update(self):
         if not self._update_queue.empty():
@@ -364,10 +387,9 @@ class AsyncSACRADAgent(BaseAgent):
 
             info = super().update()
 
-            if self._update_step >= 10:
-                self._update_queue.put(info[0])
-                if self._update_step % self._actor_update_freq == 0:
-                    self._actor_queue.put(self._actor.params)        
+            self._update_queue.put(info[0])
+            if self._update_step % self._actor_sync_freq == 0:
+                self._actor_queue.put(self._actor.params)        
 
     def pause_update(self):
         if self._pause_update:
@@ -433,10 +455,25 @@ def sample_actions(rng,
     return rng, jnp.squeeze(actions, 0)
 
 
+@functools.partial(jax.jit, static_argnames=('apply_fn', 'mode'))
+def sample_deterministic_actions(rng, 
+                   apply_fn, 
+                   params, 
+                   state, 
+                   mode):
+    rng, *keys = random.split(rng, 4)
+    image_ob, propri_ob = process_state(state, mode)
+    actions, _, _, _ = apply_fn({"params": params}, 
+                                keys,
+                                image_ob, 
+                                propri_ob,
+                                False)
+    return rng, jnp.squeeze(actions, 0)
+
+
 @functools.partial(jax.jit, static_argnames=('update_actor',
                                              'update_target',
-                                             'train_actor_encoder',
-                                             'rad_offset'))
+                                             'calculate_grad_norm'))
 def update_jit(rng, 
                actor, 
                critic, 
@@ -447,8 +484,8 @@ def update_jit(rng,
                tau,
                target_entropy, 
                update_actor, 
-               update_target, 
-               train_actor_encoder):
+               update_target,
+               calculate_grad_norm):
 
     rng, critic_new, critic_info = critic_update(
         rng, 
@@ -457,24 +494,30 @@ def update_jit(rng,
         critic_target, 
         temp, 
         batch, 
-        discount)
+        discount,
+        calculate_grad_norm)
 
     if update_target:
-        new_critic_target = target_update(critic_new, critic_target, tau)
+        new_critic_target = target_update(
+            critic_new, 
+            critic_target, 
+            tau)
     else:
         new_critic_target = critic_target
 
     if update_actor:
-        rng, new_actor, actor_info = actor_update(rng, 
-                                                  actor, 
-                                                  critic_new, 
-                                                  temp,
-                                                  batch, 
-                                                  train_actor_encoder)
+        rng, new_actor, actor_info = actor_update(
+            rng, 
+            actor, 
+            critic_new, 
+            temp,
+            batch,
+            calculate_grad_norm)
 
-        new_temp, alpha_info = temp_update(temp, 
-                                           actor_info['entropy'],
-                                           target_entropy)
+        new_temp, alpha_info = temp_update(
+            temp, 
+            actor_info['entropy'],
+            target_entropy)
     else:
         new_actor = actor
         new_temp = temp
