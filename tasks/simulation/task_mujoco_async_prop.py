@@ -58,7 +58,7 @@ def parse_args():
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    parser.add_argument('--actor_sync_freq', default=20, type=int)
+    parser.add_argument('--actor_sync_freq', default=8, type=int)
     
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
