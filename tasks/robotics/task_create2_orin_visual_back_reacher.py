@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument('--dt', default=0.045, type=float)
     parser.add_argument('--min_target_size', default=0.2, type=float)
     parser.add_argument('--reset_penalty_steps', default=67, type=int)
-    parser.add_argument('--min_charge', default=855, type=int)
+    parser.add_argument('--min_charge', default=860, type=int)
     parser.add_argument('--reward', default=-1, type=float)
     parser.add_argument('--pause_before_reset', default=0, type=float)
     parser.add_argument('--pause_after_reset', default=0, type=float)
@@ -69,6 +69,7 @@ def parse_args():
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
     parser.add_argument('--rad_offset', default=0.01, type=float)
+    parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
     parser.add_argument('--critic_lr', default=1e-4, type=float)
@@ -78,11 +79,9 @@ def parse_args():
     # actor
     parser.add_argument('--actor_lr', default=1e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    parser.add_argument('--use_critic_encoder', default=True, 
-                        action='store_true')
+    parser.add_argument('--actor_sync_freq', default=8, type=int)
     
     # encoder
-    parser.add_argument('--encoder_tau', default=0.05, type=float)
     parser.add_argument('--spatial_softmax', default=True, action='store_true')
     
     # sac
@@ -103,7 +102,7 @@ def parse_args():
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
 
-    parser.add_argument('--buffer_save_path', default='./buffers/', type=str)
+    parser.add_argument('--buffer_save_path', default='.', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
 
     args = parser.parse_args()
@@ -152,7 +151,12 @@ def main(seed=-1):
     make_dir(args.work_dir)
 
     if args.buffer_save_path:
+        if args.buffer_save_path == ".":
+            args.buffer_save_path = os.path.join(args.work_dir, 'buffers')
         make_dir(args.buffer_save_path)
+    
+    if args.buffer_load_path == ".":
+        args.buffer_load_path = os.path.join(args.work_dir, 'buffers')
 
     args.model_dir = os.path.join(args.work_dir, 'checkpoints') 
     args.net_params = config

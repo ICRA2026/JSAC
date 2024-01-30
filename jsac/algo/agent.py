@@ -43,6 +43,7 @@ class BaseAgent:
         self._calculate_grad_norm = args.calculate_grad_norm
         self._init_temperature = args.init_temperature
         self._sync_mode = args.sync_mode 
+        self._save_model = args.save_model
         self._load_model = args.load_model
         self._model_dir = args.model_dir
         self._buffer_save_path = args.buffer_save_path
@@ -300,6 +301,10 @@ class AsyncSACRADAgent(BaseAgent):
 
         self._init_models(self._image_shape, self._proprioception_shape)
         self._actor_queue.put(self._actor.params)
+
+        if self._save_model:
+            self.checkpoint(0)
+
         self._async_tasks()
 
     def add(self, state, action, reward, next_state, done):
