@@ -87,6 +87,7 @@ pip install opencv-python flax==0.7.2 gym==0.23.1 matplotlib==3.7.2 optax==0.1.5
 pip install tensorboardX==2.6.2 termcolor==2.3.0 mujoco-py wandb seaborn pandas==1.5.3
 
 ```
+<br>  
 
 ### Training
 
