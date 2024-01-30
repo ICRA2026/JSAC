@@ -14,7 +14,6 @@ from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 from threading import Thread
 import time
 from tensorboardX import SummaryWriter
-import tqdm
 import argparse
 import shutil
 import multiprocessing as mp
@@ -72,12 +71,12 @@ def parse_args():
     parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
-    parser.add_argument('--critic_lr', default=1e-4, type=float)
-    parser.add_argument('--critic_tau', default=0.0075, type=float)
+    parser.add_argument('--critic_lr', default=3e-4, type=float)
+    parser.add_argument('--critic_tau', default=0.01, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=1e-4, type=float)
+    parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--actor_sync_freq', default=8, type=int)
     
@@ -113,6 +112,7 @@ def get_run_flag():
         return int(f.readline())
 
 def main(seed=-1):
+    task_start_time = time.time()
     args = parse_args()
 
     RF_CONTINUE = 0
@@ -205,14 +205,12 @@ def main(seed=-1):
     else:
         agent = AsyncSACRADAgent(args)
 
-    task_start_time = time.time()
-    # task_end_time = task_start_time + (args.task_timeout_mins * 60)
     update_paused = True
     pause_for_update = True
 
     (image, proprioception) = env.reset()
 
-    while env.total_steps <= args.env_steps:
+    while env.total_steps < args.env_steps:
         t1 = time.time()
         action = agent.sample_actions((image, proprioception))
         t2 = time.time()
@@ -247,6 +245,7 @@ def main(seed=-1):
                 break
                 
             if charge < args.min_charge:
+                update_paused = True
                 agent.pause_update()
                 
 

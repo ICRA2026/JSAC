@@ -80,7 +80,7 @@ def actor_update(rng,
         actor = actor.replace(params=actor.params)
 
     def actor_loss_fn(actor_params):    
-        _, actions, log_probs, _ = actor.apply_fn(
+        mu, actions, log_probs, _ = actor.apply_fn(
             {"params": actor_params}, 
             keys_ac,
             batch.images, 
@@ -100,9 +100,12 @@ def actor_update(rng,
                 
         actor_loss = (log_probs * temp_val - q).mean()
 
+        noise_ratio = jnp.abs(actions - mu).mean()
+
         return actor_loss, {
             'actor_loss': actor_loss,
-            'entropy': -log_probs.mean()
+            'entropy': -log_probs.mean(),
+            'noise_ratio': noise_ratio
         }
 
     grads, info = jax.grad(actor_loss_fn, has_aux=True)(actor.params)
