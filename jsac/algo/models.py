@@ -101,7 +101,8 @@ class Encoder(nn.Module):
                               crop_width,
                               rad_image_shape)
 
-        x = images.astype(jnp.float32) / 255.0
+        x = images.astype(self.dtype)
+        x = (x - 127.5) / 127.5
 
         for i, (_, out_channel, kernel_size, stride) in enumerate(conv_params):
             layer_name = 'encoder_conv_' + str(i)
@@ -123,7 +124,8 @@ class Encoder(nn.Module):
         if self.spatial_softmax:
             x = SpatialSoftmax(width, height, channel, 
                                 name='encoder_spatialsoftmax')(x)
-        
+        else:
+            x = jnp.reshape(x, (b, -1))
         x = nn.Dense(self.net_params['latent'], kernel_init=default_init(), 
                      dtype=self.dtype)(x)
         x = nn.LayerNorm(dtype=self.dtype)(x)

@@ -67,6 +67,7 @@ class BaseAgent:
                 self._batch_size, 
                 self._obs_queue,
                 num_workers=8,
+                image_history=self._image_history,
                 load_path=self._buffer_load_path)
 
     def _unpack(self, state):
