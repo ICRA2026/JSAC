@@ -1,4 +1,4 @@
-from jsac.algo.replay_buffer import AsyncSMRadReplayBuffer
+from jsac.algo.replay_buffer import ReplayBuffer, AsyncSMReplayBuffer, AsyncSampleEfficientReplayBuffer
 
 import jax
 from jax import random
@@ -22,48 +22,52 @@ import orbax
 
 class BaseAgent:
     def __init__(self, args):
-        self._rng = jax.random.PRNGKey(args.seed)
-
-        self._seed = args.seed
-        self._mode = args.mode
-        self._proprioception_shape = args.proprioception_shape
-        self._action_shape = args.action_shape
-        self._action_dim = args.action_shape[-1]
-        self._target_entropy = -self._action_dim / 2
-        self._replay_buffer_capacity = args.replay_buffer_capacity
-        self._batch_size = args.batch_size
-        self._critic_tau = args.critic_tau
-        self._actor_update_freq = args.actor_update_freq
-        self._critic_target_update_freq = args.critic_target_update_freq
-        self._discount = args.discount 
-        self._net_params = args.net_params
-        self._critic_lr = args.critic_lr
-        self._actor_lr = args.actor_lr
-        self._temp_lr = args.temp_lr
-        self._calculate_grad_norm = args.calculate_grad_norm
-        self._init_temperature = args.init_temperature
-        self._sync_mode = args.sync_mode 
-        self._save_model = args.save_model
-        self._load_model = args.load_model
-        self._model_dir = args.model_dir
-        self._buffer_save_path = args.buffer_save_path
-        self._buffer_load_path = args.buffer_load_path
-
-        if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:
-            self._image_shape = args.image_shape
-            self._rad_offset = args.rad_offset
-            self._spatial_softmax = args.spatial_softmax
-        else:
-            self._image_shape = (0,0,0)
+        for key in args:
+            if key == 'seed':
+                self._rng = jax.random.PRNGKey(args[key])
+            elif key == 'action_shape':
+                self._action_shape = args[key]
+                self._action_dim = self._action_shape[-1]
+                self._target_entropy = -self._action_dim / 2
+            else: 
+                setattr(self, f'_{key}', args[key])
+             
+        if self._mode == MODE.PROP:
+            self._image_shape = None
             self._rad_offset = 0
+            self._image_history = 0
             self._spatial_softmax = False
-
-        if not self._sync_mode:
-            self._actor_sync_freq = args.actor_sync_freq
-
+        else:
+            self._obs_queue = mp.Queue()
+        
+        self._dtype = jnp.float32
+        
+        self._log_std_min = -10
+        self._log_std_max = 10
+        self._update_log_std = True
 
         self._replay_buffer = None
         self._update_step = 0
+
+    def _init_buffers(self):
+        if self._mode == MODE.PROP:
+            self._replay_buffer = ReplayBuffer(
+                self._image_shape, 
+                self._proprioception_shape, 
+                self._action_shape,
+                self._replay_buffer_capacity, 
+                self._batch_size,
+                load_path=self._buffer_load_path)
+        else:
+            self._replay_buffer = AsyncSampleEfficientReplayBuffer(
+                self._single_image_shape, 
+                self._proprioception_shape, 
+                self._action_shape,
+                self._replay_buffer_capacity, 
+                self._batch_size, 
+                self._obs_queue,
+                num_workers=8,
+                load_path=self._buffer_load_path)
 
     def _unpack(self, state):
         if self._mode == MODE.IMG:
@@ -86,21 +90,12 @@ class BaseAgent:
             self._action_dim, 
             self._net_params,
             self._rad_offset, 
-            self._mode)
+            self._spatial_softmax,
+            self._dtype,
+            self._mode,
+            self._clip_global_norm)
 
-        self._rng, self._critic_target = init_critic(
-            self._rng, 
-            self._critic_lr, 
-            init_image_shape,
-            init_proprioception_shape, 
-            self._action_dim, 
-            self._net_params,
-            self._rad_offset, 
-            self._mode)
-
-        critic_target_params = copy.deepcopy(self._critic.params)
-        self._critic_target = self._critic_target.replace(
-            params=critic_target_params)
+        self._critic_target_params = copy.deepcopy(self._critic.params)
 
         self._rng, self._actor = init_actor(
             self._rng, 
@@ -110,7 +105,9 @@ class BaseAgent:
             init_proprioception_shape, 
             self._action_dim, 
             self._net_params,
-            self._rad_offset,   
+            self._rad_offset, 
+            self._spatial_softmax, 
+            self._dtype,
             self._mode)
 
         self._rng, self._temp = init_temperature(
@@ -119,19 +116,47 @@ class BaseAgent:
         if self._load_model > 0:
             self._load_model_fnc()
 
-            
+    def add(self, state, action, reward, next_state, done, first_step):
+        image, proprioception = self._unpack(state)
+        next_image, next_proprioception = self._unpack(next_state)
+
+        if self._mode == MODE.PROP:
+            self._replay_buffer.add(image, 
+                                    proprioception, 
+                                    action, 
+                                    reward, 
+                                    next_image, 
+                                    next_proprioception, 
+                                    done)
+        else:
+            image = image[:, :, -3:]
+            next_image = next_image[:, :, -3:]
+            self._obs_queue.put((image, 
+                                proprioception, 
+                                action, 
+                                reward,
+                                next_image, 
+                                next_proprioception, 
+                                done,
+                                first_step))
+      
     def update(self):
         self._update_step += 1
+        
+        if self._update_log_std and self._update_step > 10:
+            self._log_std_min = -20
+            self._log_std_max = 2
+            self._update_log_std = False
 
         t1 = time.time()
         
         batch = self._replay_buffer.sample()
 
-        self._rng, actor, critic, critic_target, temp, info = update_jit(
+        self._rng, actor, critic, critic_target_params, temp, info = update_jit(
             self._rng,
             self._actor,
             self._critic,
-            self._critic_target,
+            self._critic_target_params,
             self._temp,
             batch,
             self._discount,
@@ -139,12 +164,14 @@ class BaseAgent:
             self._target_entropy,
             self._update_step % self._actor_update_freq == 0,
             self._update_step % self._critic_target_update_freq == 0,
+            self._log_std_min, 
+            self._log_std_max,
             self._calculate_grad_norm)
 
         jax.block_until_ready(actor.params)
         self._actor = actor
         self._critic = critic
-        self._critic_target = critic_target
+        self._critic_target_params = critic_target_params
         self._temp = temp
 
         t2 = time.time()
@@ -159,7 +186,7 @@ class BaseAgent:
         assert os.path.exists(model_dir)
         ckpt = {
             'critic': self._critic,
-            'critic_target': self._critic_target,
+            'critic_target': self._critic_target_params,
             'actor': self._actor,
             'temp': self._temp,
             'step': self._update_step
@@ -167,7 +194,7 @@ class BaseAgent:
         orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
         state_restored = orbax_checkpointer.restore(model_dir, item=ckpt)
         self._critic = state_restored['critic']
-        self._critic_target = state_restored['critic_target']
+        self._critic_target_params = state_restored['critic_target']
         self._actor = state_restored['actor']
         self._temp = state_restored['temp']
         self._update_step = state_restored['step']
@@ -182,7 +209,7 @@ class BaseAgent:
 
         ckpt = {
             'critic': self._critic,
-            'critic_target': self._critic_target,
+            'critic_target': self._critic_target_params,
             'actor': self._actor,
             'temp': self._temp,
             'step': self._update_step
@@ -200,31 +227,8 @@ class SACRADAgent(BaseAgent):
         described in https://arxiv.org/abs/1812.05905
         """
         super().__init__(args)
-
-        self._obs_queue = mp.Queue()
-
-        self._replay_buffer = AsyncSMRadReplayBuffer(
-            self._image_shape, 
-            self._proprioception_shape, 
-            self._action_shape,
-            self._replay_buffer_capacity, 
-            self._batch_size, 
-            self._obs_queue,
-            self._buffer_load_path)
-
+        self._init_buffers()
         self._init_models(self._image_shape, self._proprioception_shape)
-
-    def add(self, state, action, reward, next_state, done):
-        image, proprioception = self._unpack(state)
-        next_image, next_proprioception = self._unpack(next_state)
-
-        self._obs_queue.put((image, 
-                             proprioception, 
-                             action, 
-                             reward,
-                             next_image, 
-                             next_proprioception, 
-                             done))
 
     def sample_actions(self, state, deterministic=False):
         if not deterministic:
@@ -232,13 +236,19 @@ class SACRADAgent(BaseAgent):
                 self._rng, 
                 self._actor.apply_fn, 
                 self._actor.params,
-                state, self._mode)
+                state, 
+                self._mode,
+                self._log_std_min,
+                self._log_std_max)
         else:
             self._rng, actions = sample_deterministic_actions(
                 self._rng, 
                 self._actor.apply_fn, 
                 self._actor.params,
-                state, self._mode)
+                state, 
+                self._mode,
+                self._log_std_min,
+                self._log_std_max)
 
         return np.asarray(actions)
     
@@ -280,6 +290,8 @@ class AsyncSACRADAgent(BaseAgent):
             self._action_dim, 
             self._net_params, 
             self._rad_offset,
+            self._spatial_softmax,
+            self._dtype,
             self._mode)
 
         self._actor_params = self._actor_queue.get()
@@ -289,16 +301,7 @@ class AsyncSACRADAgent(BaseAgent):
 
     def _init_async(self):
         self._closeing_lock.acquire()
-
-        self._replay_buffer = AsyncSMRadReplayBuffer(
-            self._image_shape, 
-            self._proprioception_shape, 
-            self._action_shape,
-            self._replay_buffer_capacity, 
-            self._batch_size, 
-            self._obs_queue,
-            self._buffer_load_path)
-
+        self._init_buffers()
         self._init_models(self._image_shape, self._proprioception_shape)
         self._actor_queue.put(self._actor.params)
 
@@ -307,19 +310,6 @@ class AsyncSACRADAgent(BaseAgent):
 
         self._async_tasks()
 
-    def add(self, state, action, reward, next_state, done):
-        image, proprioception = self._unpack(state)
-        next_image, next_proprioception = self._unpack(next_state)
-
-        self._obs_queue.put((image, 
-                             proprioception, 
-                             action, 
-                             reward,
-                             next_image, 
-                             next_proprioception, 
-                             done))
-
-
     def sample_actions(self, state, deterministic=False):
         if not deterministic:
             with self._actor_lock:
@@ -327,24 +317,36 @@ class AsyncSACRADAgent(BaseAgent):
                     self._rng, 
                     self._actor_model.apply, 
                     self._actor_params,
-                    state, self._mode)
+                    state, 
+                    self._mode,
+                    self._log_std_min,
+                    self._log_std_max)
         else:
             with self._actor_lock:
                 self._rng, actions = sample_deterministic_actions(
                     self._rng, 
                     self._actor_model.apply, 
                     self._actor_params,
-                    state, self._mode)
+                    state, 
+                    self._mode,
+                    self._log_std_min,
+                    self._log_std_max)
 
         return np.asarray(actions)
-    
 
     def update(self):
         if not self._update_queue.empty():
-            info = []
+            infos = []
             while not self._update_queue.empty():
-                info.append(self._update_queue.get())
-            return info
+                info = self._update_queue.get()
+                infos.append(info)
+                
+                if self._update_log_std and info['num_updates'] > 10:
+                    self._log_std_min = -20
+                    self._log_std_max = 2
+                    self._update_log_std = False
+
+            return infos
         else:
             return None
 
@@ -446,17 +448,20 @@ def process_state(state, mode):
 
 @functools.partial(jax.jit, static_argnames=('apply_fn', 'mode'))
 def sample_actions(rng, 
-                   apply_fn, 
-                   params, 
-                   state, 
-                   mode):
+                          apply_fn, 
+                          params,
+                          state, 
+                          mode, 
+                          log_std_min, 
+                          log_std_max):
     rng, *keys = random.split(rng, 4)
     image_ob, propri_ob = process_state(state, mode)
     _, actions, _, _ = apply_fn({"params": params}, 
                                 keys,
                                 image_ob, 
                                 propri_ob,
-                                False)
+                                log_std_min, 
+                                log_std_max)
     return rng, jnp.squeeze(actions, 0)
 
 
@@ -465,14 +470,17 @@ def sample_deterministic_actions(rng,
                    apply_fn, 
                    params, 
                    state, 
-                   mode):
+                   mode, 
+                   log_std_min,
+                   log_std_max):
     rng, *keys = random.split(rng, 4)
     image_ob, propri_ob = process_state(state, mode)
     actions, _, _, _ = apply_fn({"params": params}, 
                                 keys,
                                 image_ob, 
                                 propri_ob,
-                                False)
+                                log_std_min, 
+                                log_std_max)
     return rng, jnp.squeeze(actions, 0)
 
 
@@ -482,33 +490,37 @@ def sample_deterministic_actions(rng,
 def update_jit(rng, 
                actor, 
                critic, 
-               critic_target, 
+               critic_target_params, 
                temp, 
                batch, 
                discount, 
                tau,
                target_entropy, 
                update_actor, 
-               update_target,
+               update_target, 
+               log_std_min, 
+               log_std_max,
                calculate_grad_norm):
 
     rng, critic_new, critic_info = critic_update(
         rng, 
         actor, 
         critic, 
-        critic_target, 
+        critic_target_params, 
         temp, 
         batch, 
-        discount,
+        discount, 
+        log_std_min, 
+        log_std_max,
         calculate_grad_norm)
 
     if update_target:
         new_critic_target = target_update(
             critic_new, 
-            critic_target, 
+            critic_target_params, 
             tau)
     else:
-        new_critic_target = critic_target
+        new_critic_target = critic_target_params
 
     if update_actor:
         rng, new_actor, actor_info = actor_update(
@@ -516,7 +528,9 @@ def update_jit(rng,
             actor, 
             critic_new, 
             temp,
-            batch,
+            batch, 
+            log_std_min, 
+            log_std_max,
             calculate_grad_norm)
 
         new_temp, alpha_info = temp_update(

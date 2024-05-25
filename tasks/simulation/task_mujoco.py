@@ -11,7 +11,6 @@ from jsac.helpers.logger import Logger
 from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
-from tensorboardX import SummaryWriter
 import argparse
 import shutil
 import multiprocessing as mp
@@ -26,45 +25,46 @@ config = {
         [32, 32, 3, 1],
     ],
     
-    'latent': 50,
+    'latent': 64,
 
-    'mlp': [512, 512],
+    'mlp': [1024, 1024, 256],
 }
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='reacher_async_img', type=str)
+    parser.add_argument('--name', default='hopper', type=str)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--mode', default='img', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-    parser.add_argument('--env_name', default='Reacher-v2', type=str)
+    parser.add_argument('--env_name', default='Hopper-v4', type=str)
     parser.add_argument('--image_height', default=100, type=int)
     parser.add_argument('--image_width', default=100, type=int)
-    parser.add_argument('--stack_frames', default=3, type=int)
+    parser.add_argument('--image_history', default=3, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=50000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=1000000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=5000, type=int)
-    parser.add_argument('--env_steps', default=50000, type=int)
+    parser.add_argument('--init_steps', default=10000, type=int)
+    parser.add_argument('--env_steps', default=2000000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
-    parser.add_argument('--sync_mode', default=False, action='store_true')
+    parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
-    parser.add_argument('--rad_offset', default=0.01, type=float)
+    parser.add_argument('--rad_offset', default=0.02, type=float)
     parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float)
-    parser.add_argument('--critic_tau', default=0.01, type=float)
+    parser.add_argument('--critic_tau', default=0.005, type=float)
+    parser.add_argument('--clip_global_norm', default=0.5, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    parser.add_argument('--actor_sync_freq', default=8, type=int)
+    # parser.add_argument('--actor_sync_freq', default=8, type=int)
     
     # encoder
     parser.add_argument('--spatial_softmax', default=True, action='store_true')
@@ -75,10 +75,11 @@ def parse_args():
     parser.add_argument('--temp_lr', default=1e-4, type=float)
     
     # misc
+    parser.add_argument('--update_every', default=2, type=int)
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=500, type=int)
+    parser.add_argument('--xtick', default=10000, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=False, action='store_true')
@@ -96,9 +97,6 @@ def parse_args():
 def main(seed=-1):
     task_start_time = time.time()
     args = parse_args()
-
-    assert args.mode == MODE.IMG
-    assert args.sync_mode == False
 
     if seed != -1:
         args.seed = seed
@@ -131,6 +129,9 @@ def main(seed=-1):
         args.buffer_load_path = os.path.join(args.work_dir, 'buffers')
 
     args.model_dir = os.path.join(args.work_dir, 'checkpoints') 
+    if args.save_model:
+        make_dir(args.model_dir)
+        
     args.net_params = config
 
     if args.save_wandb:
@@ -144,7 +145,7 @@ def main(seed=-1):
                    args.save_tensorboard, args.save_wandb)
 
     env = MujocoVisualEnv(
-        args.env_name, args.mode, args.seed, args.stack_frames, 
+        args.env_name, args.mode, args.seed, args.image_history, 
         args.image_width, args.image_height)
     
     env = WrappedEnv(env, start_step=args.start_step, 
@@ -153,16 +154,18 @@ def main(seed=-1):
     set_seed_everywhere(seed=args.seed)
 
     args.image_shape = env.image_space.shape
+    args.single_image_shape = (args.image_width, args.image_height, 3)
     args.proprioception_shape = env.proprioception_space.shape
     args.action_shape = env.action_space.shape
     args.env_action_space = env.action_space
 
     if args.sync_mode:
-        agent = SACRADAgent(args)
+        agent = SACRADAgent(vars(args))
     else:
-        agent = AsyncSACRADAgent(args)
+        agent = AsyncSACRADAgent(vars(args))
 
-    update_paused = True
+    # update_paused = True
+    first_step = True
     image = env.reset()
 
     while env.total_steps < args.env_steps:
@@ -177,20 +180,23 @@ def main(seed=-1):
         else:
             mask = 0.0
 
-        agent.add(image, action, reward, next_image,  mask)
+        agent.add(image, action, reward, next_image, mask, first_step)
+        first_step = False
+
         image = next_image
 
         if done:
             image = env.reset()
             info['tag'] = 'train'
-            info['dump'] = True
             info['elapsed_time'] = time.time() - task_start_time
+            info['dump'] = True
             L.push(info)
+            first_step = True
 
-        if env.total_steps > args.init_steps:
-            if update_paused:
-                agent.resume_update()
-                update_paused = False
+        if env.total_steps > args.init_steps and env.total_steps % args.update_every==0:
+            # if update_paused:
+            #     agent.resume_update()
+            #     update_paused = False
             update_infos = agent.update()
             if update_infos is not None:
                 for update_info in update_infos:
@@ -211,7 +217,7 @@ def main(seed=-1):
 
     agent.pause_update()
     if args.save_model:
-        agent.checkpoint(args.env_steps)
+        agent.checkpoint(env.total_steps)
     L.plot()
     L.close()
 
@@ -226,9 +232,4 @@ if __name__ == '__main__':
 
     main()
 
-
-
-
-
-    
 

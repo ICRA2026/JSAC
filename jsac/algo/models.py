@@ -1,17 +1,20 @@
-from typing import Optional, Sequence
-
-import flax
+from typing import Optional, Sequence, Any
+ 
 import flax.linen as nn
-import jax
-import jax
+import jax 
 import jax.numpy as jnp
 from jax import random, vmap 
 import functools
+from tensorflow_probability.substrates import jax as tfp
+tfd = tfp.distributions
+tfb = tfp.bijectors
+
 
 class MODE:
     IMG = 'img'
     IMG_PROP = 'img_prop'
     PROP = 'prop'
+
 
 def default_init(scale: Optional[float] = jnp.sqrt(2)):
     return nn.initializers.orthogonal(scale, dtype=jnp.float32)
@@ -58,8 +61,10 @@ class SpatialSoftmax(nn.Module):
 
 class Encoder(nn.Module):
     net_params: dict 
+    spatial_softmax: bool = True
     rad_offset: float = 0.01
     mode: str = MODE.IMG_PROP
+    dtype: Any = jnp.float32
 
     @nn.compact
     def __call__(self, 
@@ -114,8 +119,15 @@ class Encoder(nn.Module):
                 x = nn.relu(x)
 
         b, height, width, channel = x.shape
-        x = SpatialSoftmax(width, height, channel, 
-                            name='encoder_spatialsoftmax')(x)
+        
+        if self.spatial_softmax:
+            x = SpatialSoftmax(width, height, channel, 
+                                name='encoder_spatialsoftmax')(x)
+        
+        x = nn.Dense(self.net_params['latent'], kernel_init=default_init(), 
+                     dtype=self.dtype)(x)
+        x = nn.LayerNorm(dtype=self.dtype)(x)
+        x = nn.tanh(x)
 
         if stop_gradient:
             x = jax.lax.stop_gradient(x)
@@ -129,6 +141,7 @@ class Encoder(nn.Module):
 class MLP(nn.Module):
     hidden_dims: Sequence[int]
     activate_final: int = False
+    dtype: Any = jnp.float32
 
     @nn.compact
     def __call__(self, x):
@@ -139,75 +152,50 @@ class MLP(nn.Module):
         return x
 
 
-LOG_STD_MIN = -10.0
-LOG_STD_MAX = 10.0
-
-
-def gaussian_logprob(noise, log_std):
-    """Compute Gaussian log probability."""
-    residual = (-0.5 * jnp.power(noise, 2) - \
-                log_std).sum(-1, keepdims=True)
-    return residual - 0.5 * jnp.log(2 * jnp.pi) * \
-        noise.shape[-1]
-
-
-def squash(mu, pi, log_pi):
-    """Apply squashing function.
-    See appendix C from https://arxiv.org/pdf/1812.05905.pdf.
-    """
-    mu = nn.tanh(mu)
-    if pi is not None:
-        pi = nn.tanh(pi)
-    if log_pi is not None:
-        log_pi -= jnp.log(nn.relu(1 - jnp.power(pi, 2)) + \
-                          1e-6).sum(-1, keepdims=True)
-    return mu, pi, log_pi
-
-
 class ActorModel(nn.Module):
     net_params: dict 
     action_dim: int
     rad_offset: float = 0.01
+    spatial_softmax: bool = True
     mode: str = MODE.IMG_PROP
+    dtype: Any = jnp.float32
 
     @nn.compact
     def __call__(self, 
                  keys, 
                  images, 
                  proprioceptions, 
-                 apply_rad=False,
-                 stop_gradient=False):
+                 log_std_min=-10,
+                 log_std_max=10,
+                 apply_rad=False):
 
         latents = Encoder(self.net_params, 
+                          self.spatial_softmax,
                           self.rad_offset,
                           self.mode,
+                          self.dtype,
                           name='encoder')(keys[1:],
                                           images, 
                                           proprioceptions, 
                                           apply_rad,
-                                          stop_gradient)
+                                          True)
         
-        outputs = MLP(self.net_params['mlp'], activate_final=True)(latents)
-        l = self.net_params['mlp'][-1]
+        outputs = MLP(self.net_params['mlp'], activate_final=True, dtype=self.dtype)(latents)
         init = nn.initializers.zeros_init()
+        mu = nn.Dense(self.action_dim, kernel_init=init, dtype=self.dtype)(outputs)
+        log_std = nn.Dense(self.action_dim, kernel_init=init, dtype=self.dtype)(outputs)
+        log_std = jnp.clip(log_std, log_std_min, log_std_max)
 
-        x = nn.Dense(self.action_dim * 2, 
-                     kernel_init=init, dtype=jnp.float32)(outputs)
-        mu, log_std = jnp.split(x, 2, -1)
+        ## From https://github.com/ikostrikov/jaxrl
+        mu = nn.tanh(mu)
+        base_dist = tfd.MultivariateNormalDiag(loc=mu,
+                                               scale_diag=jnp.exp(log_std))
 
-        log_std = nn.tanh(log_std)
-        log_std = LOG_STD_MIN + 0.5 * (
-            LOG_STD_MAX - LOG_STD_MIN
-        ) * (log_std + 1)
-
-        std = jnp.exp(log_std)
-        noise = random.normal(keys[0], mu.shape, dtype=jnp.float32) 
-        pi = mu + noise * std
-
-        log_pi = gaussian_logprob(noise, log_std)
-
-        mu, pi, log_pi = squash(mu, pi, log_pi)
-        log_pi = jnp.squeeze(log_pi, -1)
+        dist = tfd.TransformedDistribution(distribution=base_dist,
+                                               bijector=tfb.Tanh())
+        pi = dist.sample(seed=keys[0])
+        log_pi = dist.log_prob(pi)
+        
         return mu, pi, log_pi, log_std
     
     def __hash__(self): 
@@ -216,6 +204,7 @@ class ActorModel(nn.Module):
 
 class QFunction(nn.Module):
     hidden_dims: Sequence[int]
+    dtype: Any = jnp.float32
 
     @nn.compact
     def __call__(self, latents, actions):
@@ -228,7 +217,9 @@ class CriticModel(nn.Module):
     net_params: dict  
     action_dim: int
     rad_offset: float = 0.01
+    spatial_softmax: bool = True
     mode: str = MODE.IMG_PROP
+    dtype: Any = jnp.float32
 
     @nn.compact
     def __call__(self, 
@@ -240,18 +231,27 @@ class CriticModel(nn.Module):
                  stop_gradient=False):
         
         latents = Encoder(self.net_params, 
+                          self.spatial_softmax,
                           self.rad_offset,
                           self.mode,
+                          self.dtype,
                           name='encoder')(keys,
                                           images, 
                                           proprioceptions, 
                                           apply_rad,
                                           stop_gradient)
 
-        q1 = QFunction(self.net_params['mlp'])(latents, actions)
-        q2 = QFunction(self.net_params['mlp'])(latents, actions)
+        VmapCritic = nn.vmap(
+            QFunction,
+            variable_axes={"params": 0},
+            split_rngs={"params": True},
+            in_axes=None,
+            out_axes=0,
+            axis_size=2,
+        )
+        qs = VmapCritic(self.net_params['mlp'])(latents, actions)
         
-        return (q1, q2)
+        return qs 
     
 
 class Temperature(nn.Module):

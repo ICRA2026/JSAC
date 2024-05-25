@@ -6,22 +6,28 @@ import flax
 def critic_update(rng, 
                   actor, 
                   critic, 
-                  critic_target, 
+                  critic_target_params, 
                   temp, 
                   batch, 
                   discount,
+                  log_std_min,
+                  log_std_max,
                   calculate_grad_norm=True):
 
     rng, *keys_ac = random.split(rng, 4)
     rng, *keys_crt = random.split(rng, 3)
     rng, *keys_cr = random.split(rng, 3)
     
+    critic_target = critic.replace(params=critic_target_params)
+    
     _, next_actions, next_log_probs, _ = actor.apply_fn(
         {"params": actor.params}, 
         keys_ac,
         batch.next_images, 
         batch.next_proprioceptions,
-        True)                           # apply_rad
+        log_std_min,
+        log_std_max,
+        apply_rad=True) 
 
     target_Q1, target_Q2 = critic_target.apply_fn(
         {"params": critic_target.params}, 
@@ -29,12 +35,13 @@ def critic_update(rng,
         batch.next_images, 
         batch.next_proprioceptions, 
         next_actions,
-        True)                           # apply_rad
+        apply_rad=True, 
+        stop_gradient=True)                          
     
     temp_val = temp.apply_fn({"params": temp.params})
     target_V = jnp.minimum(target_Q1, target_Q2) - temp_val * next_log_probs
 
-    target_Q = batch.rewards + batch.masks * discount * target_V
+    target_Q = batch.rewards + batch.dones * discount * target_V
 
     def critic_loss_fn(critic_params):
         q1, q2 = critic.apply_fn( 
@@ -43,7 +50,7 @@ def critic_update(rng,
             batch.images, 
             batch.proprioceptions, 
             batch.actions,
-            True)                       # apply_rad
+            apply_rad=True)                      
         
         critic_loss = ((q1 - target_Q)**2 + (q2 - target_Q)**2).mean()
 
@@ -66,7 +73,9 @@ def actor_update(rng,
                  actor, 
                  critic, 
                  temp, 
-                 batch,  
+                 batch, 
+                 log_std_min, 
+                 log_std_max, 
                  calculate_grad_norm=True):
     rng, *keys_ac = random.split(rng, 4)
     rng, *keys_cr = random.split(rng, 3)
@@ -84,9 +93,10 @@ def actor_update(rng,
             {"params": actor_params}, 
             keys_ac,
             batch.images, 
-            batch.proprioceptions,
-            True,                       # apply rad
-            True)                       # stop_gradient to encoder
+            batch.proprioceptions, 
+            log_std_min, 
+            log_std_max, 
+            apply_rad=True)
  
         q1, q2 = critic.apply_fn(
             {'params': critic.params}, 
@@ -94,7 +104,7 @@ def actor_update(rng,
             batch.images, 
             batch.proprioceptions, 
             actions, 
-            True)                       # apply rad
+            apply_rad=True)                      
         
         q = jnp.minimum(q1, q2)
                 
@@ -132,9 +142,9 @@ def temp_update(temp, entropy, target_entropy):
 
     return temp_new, info
 
-def target_update(critic, critic_target, tau):
+def target_update(critic, critic_target_params, tau):
     new_target_params = jax.tree_map(
         lambda p, tp: p * tau + tp * (1 - tau), critic.params,
-        critic_target.params)
+        critic_target_params)
 
-    return critic_target.replace(params=new_target_params)
+    return new_target_params
