@@ -143,7 +143,7 @@ class BaseAgent:
     def update(self):
         self._update_step += 1
         
-        if self._update_log_std and self._update_step > 10:
+        if self._update_log_std and self._update_step > self._env_steps // 4:
             self._log_std_min = -20
             self._log_std_max = 2
             self._update_log_std = False
@@ -341,7 +341,7 @@ class AsyncSACRADAgent(BaseAgent):
                 info = self._update_queue.get()
                 infos.append(info)
                 
-                if self._update_log_std and info['num_updates'] > 10:
+                if self._update_log_std and info['num_updates'] > self._env_steps // 4: 
                     self._log_std_min = -20
                     self._log_std_max = 2
                     self._update_log_std = False

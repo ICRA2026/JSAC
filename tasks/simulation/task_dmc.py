@@ -35,7 +35,7 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='hopper_hop', type=str)
+    parser.add_argument('--name', default='hopper_hop_no_ss', type=str)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--mode', default='img', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
@@ -43,7 +43,7 @@ def parse_args():
     parser.add_argument('--env_name', default='hopper_hop', type=str)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=1000000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=500000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=20000, type=int)
@@ -70,9 +70,9 @@ def parse_args():
     # vision parameters, used when mode is 'img' or 'img_prop'
     parser.add_argument('--image_height', default=84, type=int)
     parser.add_argument('--image_width', default=84, type=int)
-    parser.add_argument('--image_history', default=3, type=int)
+    parser.add_argument('--image_history', default=2, type=int)
     parser.add_argument('--num_cameras', default=1, type=int)
-    parser.add_argument('--spatial_softmax', default=True, action='store_true')
+    parser.add_argument('--spatial_softmax', default=False, action='store_true')
     parser.add_argument('--rad_offset', default=0.02, type=float)
     
     # misc
@@ -170,7 +170,7 @@ def main(seed=-1):
 
     task_start_time = time.time()
     image = env.reset()
-    print(image.shape)
+    print('Image shape: ', image.shape)
     first_step = True
 
     while env.total_steps < args.env_steps:
