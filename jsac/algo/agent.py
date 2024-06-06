@@ -59,16 +59,25 @@ class BaseAgent:
                 self._batch_size,
                 load_path=self._buffer_load_path)
         else:
-            self._replay_buffer = AsyncSampleEfficientReplayBuffer(
-                self._single_image_shape, 
+            self._replay_buffer = AsyncSMReplayBuffer(
+                self._image_shape, 
                 self._proprioception_shape, 
                 self._action_shape,
                 self._replay_buffer_capacity, 
-                self._batch_size, 
+                self._batch_size,
                 self._obs_queue,
-                num_workers=8,
-                image_history=self._image_history,
                 load_path=self._buffer_load_path)
+
+        #     self._replay_buffer = AsyncSampleEfficientReplayBuffer(
+        #         self._single_image_shape, 
+        #         self._proprioception_shape, 
+        #         self._action_shape,
+        #         self._replay_buffer_capacity, 
+        #         self._batch_size, 
+        #         self._obs_queue,
+        #         num_workers=8,
+        #         image_history=self._image_history,
+        #         load_path=self._buffer_load_path)
 
     def _unpack(self, state):
         if self._mode == MODE.IMG:
@@ -117,10 +126,10 @@ class BaseAgent:
         if self._load_model > 0:
             self._load_model_fnc()
 
-    def add(self, state, action, reward, next_state, done, first_step):
+    def add(self, state, action, reward, next_state, done):
         image, proprioception = self._unpack(state)
         next_image, next_proprioception = self._unpack(next_state)
-
+        
         if self._mode == MODE.PROP:
             self._replay_buffer.add(image, 
                                     proprioception, 
@@ -130,24 +139,27 @@ class BaseAgent:
                                     next_proprioception, 
                                     done)
         else:
-            image = image[:, :, -3:]
-            next_image = next_image[:, :, -3:]
             self._obs_queue.put((image, 
                                 proprioception, 
                                 action, 
                                 reward,
                                 next_image, 
                                 next_proprioception, 
-                                done,
-                                first_step))
+                                done))
+
+        #     image = image[:, :, -3:]
+        #     next_image = next_image[:, :, -3:]
+        #     self._obs_queue.put((image, 
+        #                         proprioception, 
+        #                         action, 
+        #                         reward,
+        #                         next_image, 
+        #                         next_proprioception, 
+        #                         done,
+        #                         first_step))
       
     def update(self):
         self._update_step += 1
-        
-        if self._update_log_std and self._update_step > self._env_steps // 4:
-            self._log_std_min = -20
-            self._log_std_max = 2
-            self._update_log_std = False
 
         t1 = time.time()
         
@@ -341,12 +353,6 @@ class AsyncSACRADAgent(BaseAgent):
             while not self._update_queue.empty():
                 info = self._update_queue.get()
                 infos.append(info)
-                
-                if self._update_log_std and info['num_updates'] > self._env_steps // 4: 
-                    self._log_std_min = -20
-                    self._log_std_max = 2
-                    self._update_log_std = False
-
             return infos
         else:
             return None

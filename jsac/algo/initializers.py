@@ -5,7 +5,6 @@ from jsac.algo.models import ActorModel, CriticModel, Temperature
 from flax.training.train_state import TrainState
 from jsac.helpers.utils import MODE
 import numpy as np
-from flax import traverse_util
 
 
 def get_init_data(init_image_shape, 
@@ -33,8 +32,7 @@ def init_critic(rng,
                 rad_offset, 
                 spatial_softmax,
                 dtype,
-                mode, 
-                clip_global_norm):
+                mode):
 
     model = CriticModel(net_params, 
                         action_dim, 
@@ -56,9 +54,8 @@ def init_critic(rng,
                         init_image, 
                         init_proprioception, 
                         init_actions)['params']
-
-    tx = optax.chain(optax.clip_by_global_norm(clip_global_norm), 
-                     optax.adam(learning_rate=learning_rate))
+    
+    tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
 
     return rng, TrainState.create(apply_fn=model.apply, 
                                   params=params, 
@@ -130,13 +127,8 @@ def init_actor(rng,
     # the encoder values from the critic.
     if mode==MODE.IMG_PROP or mode==MODE.IMG:
         params['encoder'] = critic.params['encoder']
-        partition_optimizers = {'trainable': optax.adam(learning_rate=learning_rate), 
-                                'frozen': optax.set_to_zero()}
-        param_partitions = traverse_util.path_aware_map(
-            lambda path, v: 'frozen' if 'encoder' in path else 'trainable', params)
-        tx = optax.multi_transform(partition_optimizers, param_partitions)
-    else:
-        tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
+    
+    tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
     
     return rng, TrainState.create(apply_fn=model.apply, 
                                   params=params, 

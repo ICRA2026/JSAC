@@ -81,8 +81,8 @@ class Encoder(nn.Module):
         
         batch_size, height, width, channel = images.shape
 
-        rad_h = max(round(self.rad_offset * height), 1)
-        rad_w = max(round(self.rad_offset * width), 1)
+        rad_h = max(round(self.rad_offset * height) * 2, 1)
+        rad_w = max(round(self.rad_offset * width) * 2, 1)
         rad_image_shape = ((height - (2 * rad_h)), 
                            (width - (2 * rad_w)), 
                            channel)   
@@ -102,7 +102,7 @@ class Encoder(nn.Module):
                               rad_image_shape)
 
         x = images.astype(self.dtype)
-        x = (x - 127.5) / 127.5
+        x = x / 255
 
         for i, (_, out_channel, kernel_size, stride) in enumerate(conv_params):
             layer_name = 'encoder_conv_' + str(i)
@@ -126,10 +126,6 @@ class Encoder(nn.Module):
                                 name='encoder_spatialsoftmax')(x)
         else:
             x = jnp.reshape(x, (b, -1))
-        x = nn.Dense(self.net_params['latent'], kernel_init=default_init(), 
-                     dtype=self.dtype)(x)
-        x = nn.LayerNorm(dtype=self.dtype)(x)
-        x = nn.tanh(x)
 
         if stop_gradient:
             x = jax.lax.stop_gradient(x)

@@ -38,6 +38,10 @@ class MujocoVisualEnv(gym.Wrapper):
     @property
     def proprioception_space(self):
         return self.env.observation_space
+    
+    @property
+    def action_space(self):
+        return self.env.action_space
 
 
     def step(self, a):

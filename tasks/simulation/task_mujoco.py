@@ -25,40 +25,40 @@ config = {
         [32, 32, 3, 1],
     ],
     
-    'latent': 64,
+    'latent': 50,
 
-    'mlp': [1024, 1024, 256],
+    'mlp': [1024, 1024],
 }
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='hopper', type=str)
-    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--name', default='reacher', type=str)
+    parser.add_argument('--seed', default=9, type=int)
     parser.add_argument('--mode', default='img', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-    parser.add_argument('--env_name', default='Hopper-v4', type=str)
+    parser.add_argument('--env_name', default='Reacher-v4', type=str)
     parser.add_argument('--image_height', default=100, type=int)
     parser.add_argument('--image_width', default=100, type=int)
     parser.add_argument('--image_history', default=3, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=1000000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=10000, type=int)
-    parser.add_argument('--env_steps', default=2000000, type=int)
+    parser.add_argument('--init_steps', default=5000, type=int)
+    parser.add_argument('--env_steps', default=100000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
-    parser.add_argument('--rad_offset', default=0.02, type=float)
+    parser.add_argument('--rad_offset', default=0.01, type=float)
     parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float)
-    parser.add_argument('--critic_tau', default=0.005, type=float)
-    parser.add_argument('--clip_global_norm', default=0.5, type=float)
+    parser.add_argument('--critic_tau', default=0.01, type=float)
+    parser.add_argument('--clip_global_norm', default=1.0, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
@@ -79,7 +79,7 @@ def parse_args():
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=10000, type=int)
+    parser.add_argument('--xtick', default=1000, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=False, action='store_true')
@@ -215,7 +215,8 @@ def main(seed=-1):
             env.total_steps < args.env_steps:
             agent.checkpoint(env.total_steps)
 
-    agent.pause_update()
+    if not args.sync_mode:
+        agent.pause_update()
     if args.save_model:
         agent.checkpoint(env.total_steps)
     L.plot()

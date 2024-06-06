@@ -41,7 +41,7 @@ def critic_update(rng,
     temp_val = temp.apply_fn({"params": temp.params})
     target_V = jnp.minimum(target_Q1, target_Q2) - temp_val * next_log_probs
 
-    target_Q = batch.rewards + batch.dones * discount * target_V
+    target_Q = batch.rewards + (batch.dones * discount * target_V)
 
     def critic_loss_fn(critic_params):
         q1, q2 = critic.apply_fn( 
@@ -104,7 +104,8 @@ def actor_update(rng,
             batch.images, 
             batch.proprioceptions, 
             actions, 
-            apply_rad=True)                      
+            apply_rad=True,
+            stop_gradient=True)                      
         
         q = jnp.minimum(q1, q2)
                 

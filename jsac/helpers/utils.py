@@ -137,7 +137,7 @@ class WrappedEnv(Env):
             and self._episode_steps == self._episode_max_steps:
             new_info['TimeLimit.truncated'] = True
 
-        if 'TimeLimit.truncated' in info:
+        if 'TimeLimit.truncated' in info or 'truncated' in info:
             new_info['TimeLimit.truncated'] = True
 
         if done or (not self._is_min_time and 'TimeLimit.truncated' in new_info):
