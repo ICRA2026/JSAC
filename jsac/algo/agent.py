@@ -59,25 +59,27 @@ class BaseAgent:
                 self._batch_size,
                 load_path=self._buffer_load_path)
         else:
-            self._replay_buffer = AsyncSMReplayBuffer(
-                self._image_shape, 
-                self._proprioception_shape, 
-                self._action_shape,
-                self._replay_buffer_capacity, 
-                self._batch_size,
-                self._obs_queue,
-                load_path=self._buffer_load_path)
+            if self._rb_type == 'se_buffer':
+                self._replay_buffer = AsyncSampleEfficientReplayBuffer(
+                    self._single_image_shape, 
+                    self._proprioception_shape, 
+                    self._action_shape,
+                    self._replay_buffer_capacity, 
+                    self._batch_size, 
+                    self._obs_queue,
+                    num_workers=self._rb_num_workers,
+                    image_history=self._image_history,
+                    load_path=self._buffer_load_path)
+            else:     
+                self._replay_buffer = AsyncSMReplayBuffer(
+                    self._image_shape, 
+                    self._proprioception_shape, 
+                    self._action_shape,
+                    self._replay_buffer_capacity, 
+                    self._batch_size,
+                    self._obs_queue,
+                    load_path=self._buffer_load_path)
 
-        #     self._replay_buffer = AsyncSampleEfficientReplayBuffer(
-        #         self._single_image_shape, 
-        #         self._proprioception_shape, 
-        #         self._action_shape,
-        #         self._replay_buffer_capacity, 
-        #         self._batch_size, 
-        #         self._obs_queue,
-        #         num_workers=8,
-        #         image_history=self._image_history,
-        #         load_path=self._buffer_load_path)
 
     def _unpack(self, state):
         if self._mode == MODE.IMG:
@@ -102,8 +104,7 @@ class BaseAgent:
             self._rad_offset, 
             self._spatial_softmax,
             self._dtype,
-            self._mode,
-            self._clip_global_norm)
+            self._mode)
 
         self._critic_target_params = copy.deepcopy(self._critic.params)
 
@@ -126,7 +127,7 @@ class BaseAgent:
         if self._load_model > 0:
             self._load_model_fnc()
 
-    def add(self, state, action, reward, next_state, done):
+    def add(self, state, action, reward, next_state, done, first_step):
         image, proprioception = self._unpack(state)
         next_image, next_proprioception = self._unpack(next_state)
         
@@ -139,24 +140,27 @@ class BaseAgent:
                                     next_proprioception, 
                                     done)
         else:
-            self._obs_queue.put((image, 
-                                proprioception, 
-                                action, 
-                                reward,
-                                next_image, 
-                                next_proprioception, 
-                                done))
+            if self._rb_type == 'se_buffer':
+                image = image[:, :, -3:]
+                next_image = next_image[:, :, -3:]
+                self._obs_queue.put((image, 
+                                    proprioception, 
+                                    action, 
+                                    reward,
+                                    next_image, 
+                                    next_proprioception, 
+                                    done,
+                                    first_step))
+            else:
+                self._obs_queue.put((image, 
+                                    proprioception, 
+                                    action, 
+                                    reward,
+                                    next_image, 
+                                    next_proprioception, 
+                                    done))
 
-        #     image = image[:, :, -3:]
-        #     next_image = next_image[:, :, -3:]
-        #     self._obs_queue.put((image, 
-        #                         proprioception, 
-        #                         action, 
-        #                         reward,
-        #                         next_image, 
-        #                         next_proprioception, 
-        #                         done,
-        #                         first_step))
+
       
     def update(self):
         self._update_step += 1
@@ -178,8 +182,7 @@ class BaseAgent:
             self._update_step % self._actor_update_freq == 0,
             self._update_step % self._critic_target_update_freq == 0,
             self._log_std_min, 
-            self._log_std_max,
-            self._calculate_grad_norm)
+            self._log_std_max)
 
         jax.block_until_ready(actor.params)
         self._actor = actor
@@ -492,8 +495,7 @@ def sample_deterministic_actions(rng,
 
 
 @functools.partial(jax.jit, static_argnames=('update_actor',
-                                             'update_target',
-                                             'calculate_grad_norm'))
+                                             'update_target'))
 def update_jit(rng, 
                actor, 
                critic, 
@@ -506,8 +508,7 @@ def update_jit(rng,
                update_actor, 
                update_target, 
                log_std_min, 
-               log_std_max,
-               calculate_grad_norm):
+               log_std_max):
 
     rng, critic_new, critic_info = critic_update(
         rng, 
@@ -518,8 +519,7 @@ def update_jit(rng,
         batch, 
         discount, 
         log_std_min, 
-        log_std_max,
-        calculate_grad_norm)
+        log_std_max)
 
     if update_target:
         new_critic_target = target_update(
@@ -537,8 +537,7 @@ def update_jit(rng,
             temp,
             batch, 
             log_std_min, 
-            log_std_max,
-            calculate_grad_norm)
+            log_std_max)
 
         new_temp, alpha_info = temp_update(
             temp, 

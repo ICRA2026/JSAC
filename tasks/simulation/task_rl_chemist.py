@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument('--image_history', default=3, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=400000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=1_000_000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=10000, type=int)
@@ -54,7 +54,6 @@ def parse_args():
     parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
     parser.add_argument('--rad_offset', default=0.01, type=float)
-    parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float)
@@ -84,11 +83,13 @@ def parse_args():
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_model_freq', default=50000, type=int)
+    parser.add_argument('--save_model_freq', default=20000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
 
+    parser.add_argument('--rb_type', default='sm_buffer', type=str) # Options: se_buffer, sm_buffer
+    parser.add_argument('--rb_num_workers', default=16, type=int)   # Number of workers for se_buffer
     parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
     parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 
