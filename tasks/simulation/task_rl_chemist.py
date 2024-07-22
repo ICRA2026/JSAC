@@ -88,8 +88,6 @@ def parse_args():
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
 
-    parser.add_argument('--rb_type', default='sm_buffer', type=str) # Options: se_buffer, sm_buffer
-    parser.add_argument('--rb_num_workers', default=16, type=int)   # Number of workers for se_buffer
     parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
     parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 

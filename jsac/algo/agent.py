@@ -1,4 +1,4 @@
-from jsac.algo.replay_buffer import ReplayBuffer, AsyncSMReplayBuffer, AsyncSampleEfficientReplayBuffer
+from jsac.algo.replay_buffer import ReplayBuffer, AsyncSMReplayBuffer
 
 import jax
 from jax import random
@@ -58,27 +58,15 @@ class BaseAgent:
                 self._replay_buffer_capacity, 
                 self._batch_size,
                 load_path=self._buffer_load_path)
-        else:
-            if self._rb_type == 'se_buffer':
-                self._replay_buffer = AsyncSampleEfficientReplayBuffer(
-                    self._single_image_shape, 
-                    self._proprioception_shape, 
-                    self._action_shape,
-                    self._replay_buffer_capacity, 
-                    self._batch_size, 
-                    self._obs_queue,
-                    num_workers=self._rb_num_workers,
-                    image_history=self._image_history,
-                    load_path=self._buffer_load_path)
-            else:     
-                self._replay_buffer = AsyncSMReplayBuffer(
-                    self._image_shape, 
-                    self._proprioception_shape, 
-                    self._action_shape,
-                    self._replay_buffer_capacity, 
-                    self._batch_size,
-                    self._obs_queue,
-                    load_path=self._buffer_load_path)
+        else:    
+            self._replay_buffer = AsyncSMReplayBuffer(
+                self._image_shape, 
+                self._proprioception_shape, 
+                self._action_shape,
+                self._replay_buffer_capacity, 
+                self._batch_size,
+                self._obs_queue,
+                load_path=self._buffer_load_path)
 
 
     def _unpack(self, state):
@@ -140,25 +128,13 @@ class BaseAgent:
                                     next_proprioception, 
                                     done)
         else:
-            if self._rb_type == 'se_buffer':
-                image = image[:, :, -3:]
-                next_image = next_image[:, :, -3:]
-                self._obs_queue.put((image, 
-                                    proprioception, 
-                                    action, 
-                                    reward,
-                                    next_image, 
-                                    next_proprioception, 
-                                    done,
-                                    first_step))
-            else:
-                self._obs_queue.put((image, 
-                                    proprioception, 
-                                    action, 
-                                    reward,
-                                    next_image, 
-                                    next_proprioception, 
-                                    done))
+            self._obs_queue.put((image, 
+                                proprioception, 
+                                action, 
+                                reward,
+                                next_image, 
+                                next_proprioception, 
+                                done))
 
 
       
