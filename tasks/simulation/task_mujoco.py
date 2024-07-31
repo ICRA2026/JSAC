@@ -27,7 +27,7 @@ config = {
     
     'latent': 50,
 
-    'mlp': [1024, 1024],
+    'mlp': [512, 512],
 }
 
 def parse_args():
@@ -39,16 +39,16 @@ def parse_args():
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--env_name', default='Reacher-v4', type=str)
-    parser.add_argument('--image_height', default=100, type=int)
-    parser.add_argument('--image_width', default=100, type=int)
+    parser.add_argument('--image_height', default=64, type=int)
+    parser.add_argument('--image_width', default=64, type=int)
     parser.add_argument('--image_history', default=3, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=150000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=5000, type=int)
-    parser.add_argument('--env_steps', default=100000, type=int)
+    parser.add_argument('--env_steps', default=150000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
@@ -56,7 +56,7 @@ def parse_args():
     parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
-    parser.add_argument('--critic_lr', default=3e-4, type=float)
+    parser.add_argument('--critic_lr', default=1e-4, type=float)
     parser.add_argument('--critic_tau', default=0.01, type=float)
     parser.add_argument('--clip_global_norm', default=1.0, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
@@ -75,7 +75,7 @@ def parse_args():
     parser.add_argument('--temp_lr', default=1e-4, type=float)
     
     # misc
-    parser.add_argument('--update_every', default=2, type=int)
+    parser.add_argument('--update_every', default=1, type=int)
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')

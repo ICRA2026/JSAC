@@ -123,8 +123,6 @@ def init_actor(rng,
                         init_image,
                         init_proprioception)['params']
     
-    # We do not train the actor encoder. Instead we copy
-    # the encoder values from the critic.
     if mode==MODE.IMG_PROP or mode==MODE.IMG:
         params['encoder'] = critic.params['encoder']
     

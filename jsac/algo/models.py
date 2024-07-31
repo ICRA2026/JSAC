@@ -102,7 +102,7 @@ class Encoder(nn.Module):
                               rad_image_shape)
 
         x = images.astype(self.dtype)
-        x = x / 255
+        x = (x / 255.0) - 0.5
 
         for i, (_, out_channel, kernel_size, stride) in enumerate(conv_params):
             layer_name = 'encoder_conv_' + str(i)
@@ -125,7 +125,7 @@ class Encoder(nn.Module):
             x = SpatialSoftmax(width, height, channel, 
                                 name='encoder_spatialsoftmax')(x)
         else:
-            x = jnp.reshape(x, (b, -1))
+            x = jnp.reshape(x, (b, -1)) 
 
         if stop_gradient:
             x = jax.lax.stop_gradient(x)
