@@ -33,7 +33,6 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='reacher', type=str)
     parser.add_argument('--seed', default=9, type=int)
     parser.add_argument('--mode', default='img', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
@@ -44,27 +43,26 @@ def parse_args():
     parser.add_argument('--image_history', default=3, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=150000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=500000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=5000, type=int)
-    parser.add_argument('--env_steps', default=150000, type=int)
+    parser.add_argument('--init_steps', default=10000, type=int)
+    parser.add_argument('--env_steps', default=500000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--apply_rad', default=True, action='store_true')
     parser.add_argument('--rad_offset', default=0.01, type=float)
-    parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
+    parser.add_argument('--calculate_grad_norm', default=False, action='store_true')
     
     # critic
     parser.add_argument('--critic_lr', default=1e-4, type=float)
     parser.add_argument('--critic_tau', default=0.01, type=float)
-    parser.add_argument('--clip_global_norm', default=1.0, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    # parser.add_argument('--actor_sync_freq', default=8, type=int)
+    parser.add_argument('--actor_sync_freq', default=8, type=int)
     
     # encoder
     parser.add_argument('--spatial_softmax', default=True, action='store_true')
@@ -76,10 +74,11 @@ def parse_args():
     
     # misc
     parser.add_argument('--update_every', default=1, type=int)
+    parser.add_argument('--log_every', default=10, type=int)
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=1000, type=int)
+    parser.add_argument('--xtick', default=5000, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=False, action='store_true')
@@ -100,6 +99,12 @@ def main(seed=-1):
 
     if seed != -1:
         args.seed = seed
+
+    if not args.sync_mode:
+        assert args.mode != MODE.PROP, "Async mode is not supported for proprioception only tasks." 
+
+    sync_mode = 'sync' if args.sync_mode else 'async'
+    args.name = f'{args.env_name}_{args.mode}_{sync_mode}'
 
     args.work_dir += f'/results/{args.name}/seed_{args.seed}/'
 
@@ -164,15 +169,14 @@ def main(seed=-1):
     else:
         agent = AsyncSACRADAgent(vars(args))
 
-    # update_paused = True
-    first_step = True
-    image = env.reset()
+    update_paused = True
+    state = env.reset()
 
     while env.total_steps < args.env_steps:
         t1 = time.time()
-        action = agent.sample_actions(image)
+        action = agent.sample_actions(state)
         t2 = time.time()
-        next_image, reward, done, info = env.step(action)
+        next_state, reward, done, info = env.step(action)
         t3 = time.time()
 
         if not done or 'TimeLimit.truncated' in info:
@@ -180,25 +184,23 @@ def main(seed=-1):
         else:
             mask = 0.0
 
-        agent.add(image, action, reward, next_image, mask, first_step)
-        first_step = False
+        agent.add(state, action, reward, next_state, mask)
 
-        image = next_image
+        state = next_state
 
         if done:
-            image = env.reset()
+            state = env.reset()
             info['tag'] = 'train'
             info['elapsed_time'] = time.time() - task_start_time
             info['dump'] = True
             L.push(info)
-            first_step = True
 
-        if env.total_steps > args.init_steps and env.total_steps % args.update_every==0:
-            # if update_paused:
-            #     agent.resume_update()
-            #     update_paused = False
+        if env.total_steps > args.init_steps and env.total_steps % args.update_every == 0:
+            if not args.sync_mode and update_paused: 
+                agent.resume_update()
+                update_paused = False
             update_infos = agent.update()
-            if update_infos is not None:
+            if update_infos is not None and env.total_steps % args.log_every == 0:
                 for update_info in update_infos:
                     update_info['action_sample_time'] = (t2 - t1) * 1000
                     update_info['env_time'] = (t3 - t2) * 1000

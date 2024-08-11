@@ -8,7 +8,7 @@ from gymnasium.core import Env
 import time
 import seaborn as sns
 import pandas as pd
-from statistics import mean
+
 
 class MODE:
     IMG = 'img'
@@ -50,13 +50,13 @@ def show_learning_curve(fname,
         ret = returns[i]  
         if steps >= end_step:
             if len(rets) > 0:
-                data.append([end_step, mean(rets)])
+                data.append([end_step, sum(rets)/len(rets)])
                 rets = []
             while end_step < steps:
                 end_step += xtick
         rets.append(ret) 
         
-    data.append([end_step, mean(rets)])
+    data.append([end_step, sum(rets)/len(rets)])
     df = pd.DataFrame(data, columns=["Step", "Return"])
     ax1 = sns.lineplot(x="Step", y='Return', data=df, 
                     color=sns.color_palette('bright')[0], 

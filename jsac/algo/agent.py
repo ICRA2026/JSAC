@@ -115,7 +115,7 @@ class BaseAgent:
         if self._load_model > 0:
             self._load_model_fnc()
 
-    def add(self, state, action, reward, next_state, done, first_step):
+    def add(self, state, action, reward, next_state, done):
         image, proprioception = self._unpack(state)
         next_image, next_proprioception = self._unpack(next_state)
         
