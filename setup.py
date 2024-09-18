@@ -18,6 +18,7 @@ setup(
         'wandb==0.16.0',
         'tensorflow_probability==0.21.0',
         'imageio==2.34.1',
+        'mujoco==3.2.3',
         'dm_control==1.0.22',
         'opencv_python==4.9.0.80',
         'numpy==1.25.2',
