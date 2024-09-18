@@ -56,45 +56,27 @@ pip install mujoco-py wandb seaborn pandas==1.5.3
 ```
 
 </details>
-<details>
-  <summary><h3>Install Mujoco</h3></summary>
 
-Download and save the _.mujoco_ folder at the _home_ directory ([Orin](https://drive.google.com/file/d/1B76qfcDcfFcU2Zc_LTSeeOt9JvtRvIwg/view?usp=drive_link), 
-[Server](https://drive.google.com/file/d/1fmlISGPN6bvsDTYzDT-Q7mQ0Sx7I3zFo/view?usp=drive_link)).  
-
-**Edit ~/.bashrc** to include Mujoco in $LD_LIBRARY_PATH:  
-```export LD_LIBRARY_PATH=/home/{USERNAME}/.mujoco/mujoco210/bin:$LD_LIBRARY_PATH```,  
-and add the LD_PRELOAD variable:  
-```export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libglapi.so.0```  
-
-Install the required libraries: 
+### Local Server
 ```
-pip install Cython==0.29.36 
-sudo apt install libosmesa6-dev libgl1-mesa-glx libglfw3
-sudo apt-get install patchelf
-```
-</details>
+# Clone the repo
+git clone https://github.com/fahimfss/JSAC.git
+cd JSAC
 
-### Server
-Create a conda environment and install the required libraries.  
-```
-conda create -n jsac python=3.8 jaxlib=*0.4.12=*cuda* jax==0.4.12 cuda-nvcc -c conda-forge -c nvidia
+# Create a conda env and install JSAC
+conda create -n jsac python=3.10
 conda activate jsac
 
-conda install pip
-
-pip install opencv-python flax==0.7.2 gym==0.23.1 matplotlib==3.7.2 optax==0.1.5
-pip install tensorboardX==2.6.2 termcolor==2.3.0 mujoco-py wandb seaborn pandas==1.5.3
-
+pip install -U "jax[cuda12]==0.4.30"
+pip install -e .
 ```
+Installing the latest Nvidia driver might be required to run JAX properly
+
 <br>  
 
 ### Training
 
-**Edit ~/.bashrc** to include the path to the JSAC folder in $PYTHONPATH:  
-```export PYTHONPATH=/home/{PATH_TO_JSAC}/JSAC:$PYTHONPATH```  
-<br>
 Run a [task](https://github.com/fahimfss/JSAC/tree/master/tasks/simulation) file using:  
-```python3 task_mujoco_sync_img_prop.py --seed 41```  
+```python3 task_mujoco.py --seed 41```  
 
 
