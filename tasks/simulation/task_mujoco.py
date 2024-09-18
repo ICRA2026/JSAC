@@ -2,30 +2,33 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
-os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
-# os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
-# os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
-
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
-from jsac.helpers.logger import Logger
-from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
-from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
-import argparse
 import shutil
+import argparse
 import multiprocessing as mp
+
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
+# os.environ['CUDA_VISIBLE_DEVICES']='0'
+# os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+# os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
+
+from jsac.helpers.logger import Logger
+from jsac.helpers.eval import start_eval_process
+from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
+from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 
 
 config = {
     'conv': [
         # in_channel, out_channel, kernel_size, stride
-        [-1, 32, 3, 2],
-        [32, 32, 3, 2],
-        [32, 32, 3, 2],
-        [32, 32, 3, 1],
+        [-1, 32, 5, 2],
+        [32, 32, 5, 2],
+        [32, 64, 3, 2],
+        [64, 64, 3, 1],
     ],
     
-    'latent': 50,
+    'latent_dim': 128,
 
     'mlp': [512, 512],
 }
@@ -33,56 +36,57 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--seed', default=9, type=int)
-    parser.add_argument('--mode', default='img', type=str, 
+    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-    parser.add_argument('--env_name', default='Reacher-v4', type=str)
-    parser.add_argument('--image_height', default=64, type=int)
-    parser.add_argument('--image_width', default=64, type=int)
-    parser.add_argument('--image_history', default=3, type=int)
+    parser.add_argument('--env_name', default='Hopper-v4', type=str)
+    parser.add_argument('--image_height', default=84, type=int)     # Mode: img, img_prop
+    parser.add_argument('--image_width', default=84, type=int)      # Mode: img, img_prop     
+    parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=500000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=1_000_000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=10000, type=int)
-    parser.add_argument('--env_steps', default=500000, type=int)
+    parser.add_argument('--init_steps', default=5_000, type=int)
+    parser.add_argument('--env_steps', default=1_000_000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
-    parser.add_argument('--apply_rad', default=True, action='store_true')
-    parser.add_argument('--rad_offset', default=0.01, type=float)
-    parser.add_argument('--calculate_grad_norm', default=False, action='store_true')
     
     # critic
-    parser.add_argument('--critic_lr', default=1e-4, type=float)
-    parser.add_argument('--critic_tau', default=0.01, type=float)
+    parser.add_argument('--critic_lr', default=3e-4, type=float) 
+    parser.add_argument('--num_critic_networks', default=5, type=int)
+    parser.add_argument('--num_critic_updates', default=2, type=int)
+    parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    parser.add_argument('--actor_sync_freq', default=8, type=int)
+    parser.add_argument('--actor_sync_freq', default=8, type=int)   # Sync mode: False
     
     # encoder
-    parser.add_argument('--spatial_softmax', default=True, action='store_true')
-    
+    parser.add_argument('--spatial_softmax', default=False, action='store_true')    # Mode: img, img_prop
+
     # sac
+    parser.add_argument('--temp_lr', default=3e-4, type=float)
+    parser.add_argument('--init_temperature', default=1.0, type=float)
     parser.add_argument('--discount', default=0.99, type=float)
-    parser.add_argument('--init_temperature', default=0.1, type=float)
-    parser.add_argument('--temp_lr', default=1e-4, type=float)
     
     # misc
     parser.add_argument('--update_every', default=1, type=int)
-    parser.add_argument('--log_every', default=10, type=int)
+    parser.add_argument('--log_every', default=20, type=int)
+    parser.add_argument('--eval_steps', default=10_000, type=int)
+    parser.add_argument('--num_eval_episodes', default=10, type=int)
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=5000, type=int)
+    parser.add_argument('--xtick', default=10_000, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
-    parser.add_argument('--save_model', default=False, action='store_true')
-    parser.add_argument('--save_model_freq', default=10000, type=int)
+    parser.add_argument('--save_model', default=True, action='store_true')
+    parser.add_argument('--save_model_freq', default=500_000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
@@ -165,9 +169,18 @@ def main(seed=-1):
     args.env_action_space = env.action_space
 
     if args.sync_mode:
-        agent = SACRADAgent(vars(args))
+        agent = SACRADAgent(vars(args)) 
     else:
         agent = AsyncSACRADAgent(vars(args))
+        
+    if args.eval_steps > 0:
+        eval_args = vars(args)
+        eval_args['env_type'] = 'MUJOCO'
+        eval_queue = mp.Queue()        
+        eval_process = start_eval_process(eval_args, 
+                                          args.work_dir, 
+                                          eval_queue, 
+                                          args.num_eval_episodes)
 
     update_paused = True
     state = env.reset()
@@ -179,16 +192,12 @@ def main(seed=-1):
         next_state, reward, done, info = env.step(action)
         t3 = time.time()
 
-        if not done or 'TimeLimit.truncated' in info:
-            mask = 1.0
-        else:
-            mask = 0.0
-
+        mask = 1.0 if not done or 'truncated' in info else 0.0
+        
         agent.add(state, action, reward, next_state, mask)
-
         state = next_state
 
-        if done:
+        if done or 'truncated' in info:
             state = env.reset()
             info['tag'] = 'train'
             info['elapsed_time'] = time.time() - task_start_time
@@ -216,11 +225,19 @@ def main(seed=-1):
         if args.save_model and env.total_steps % args.save_model_freq == 0 and \
             env.total_steps < args.env_steps:
             agent.checkpoint(env.total_steps)
+            
+        if env.total_steps % args.eval_steps == 0:
+            eval_queue.put(agent.get_actor_params())
+            eval_queue.put(env.total_steps)
 
     if not args.sync_mode:
         agent.pause_update()
     if args.save_model:
         agent.checkpoint(env.total_steps)
+    
+    if args.eval_steps > 0:    
+        eval_queue.put('close')
+        eval_process.join()
     L.plot()
     L.close()
 
@@ -234,5 +251,4 @@ if __name__ == '__main__':
     mp.set_start_method('spawn')
 
     main()
-
 

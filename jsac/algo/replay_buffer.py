@@ -1,9 +1,9 @@
+import os
+import time
+import pickle
+import threading
 import numpy as np
 import collections
-import threading
-import time
-import os
-import pickle
 from multiprocessing import shared_memory, Process, Queue, Lock
 
 
@@ -22,7 +22,7 @@ CLOSE = 'close'
 
 Batch = collections.namedtuple(
     'Batch', ['images', 'proprioceptions', 'actions', 'rewards',
-              'dones', 'next_images', 'next_proprioceptions'])
+              'masks', 'next_images', 'next_proprioceptions'])
 
 
 class ReplayBuffer():
@@ -35,13 +35,16 @@ class ReplayBuffer():
                  capacity, 
                  batch_size, 
                  init_buffers=True, 
-                 load_path=''):
+                 load_path='',
+                 min_episode_length=20):
 
         self._image_shape = image_shape
         self._proprioception_shape = proprioception_shape
         self._action_shape = action_shape
         self._capacity = capacity
         self._batch_size = batch_size
+        
+        self._min_episode_length = min_episode_length
 
         self._idx = 0
         self._full = False
@@ -72,15 +75,20 @@ class ReplayBuffer():
         if self._load_path:
             total_size = self._load()
         else:
-            if not self._ignore_image:
+            if not self._ignore_image: 
+                self._image_cap = self._capacity + ((self._capacity // self._min_episode_length) * 2) 
+        
                 self._images = np.empty(
-                    (self._capacity, *self._image_shape), 
-                    dtype=np.uint8)
-                self._next_images = np.empty(
-                    (self._capacity, *self._image_shape), 
-                    dtype=np.uint8)
+                    (self._image_cap, *self._image_shape), dtype=np.uint8) 
+                self._images_idxs = np.empty((self._capacity,), dtype=np.int32)
+                self._next_images_idxs = np.empty((self._capacity,), dtype=np.int32)
                 
-                total_size += self._images.nbytes + self._next_images.nbytes
+                self._is_first_step = True
+                self._im_idx = 0
+                self._last_im_idx = -1
+                
+                total_size += self._images.nbytes + self._images_idxs.nbytes + \
+                    self._next_images_idxs.nbytes
 
             if not self._ignore_propri:
                 self._propris = np.empty(
@@ -98,13 +106,29 @@ class ReplayBuffer():
             
             self._rewards = np.empty((self._capacity), 
                                      dtype=np.float32)
-            self._dones = np.empty((self._capacity), 
+            self._masks = np.empty((self._capacity), 
                                    dtype=np.float32)
             
-            total_size += self._actions.nbytes + self._rewards.nbytes + self._dones.nbytes
+            total_size += self._actions.nbytes + self._rewards.nbytes + self._masks.nbytes
         
         return total_size
 
+    def _add_image(self, image, next_image):
+        if self._is_first_step:
+            self._is_first_step = False
+            idx1 = self._im_idx
+            idx2 = (self._im_idx + 1) % self._image_cap
+            self._images[idx1] = image
+            self._images[idx2] = next_image
+            self._im_idx = (self._im_idx + 2) % self._image_cap 
+        else:
+            idx1, idx2 = self._last_im_idx, self._im_idx
+            self._images[idx2] = next_image
+            self._im_idx = (self._im_idx + 1) % self._image_cap
+        
+        self._last_im_idx = idx2   
+        return idx1, idx2
+            
     def add(self, 
             image, 
             propri, 
@@ -112,17 +136,22 @@ class ReplayBuffer():
             reward, 
             next_image, 
             next_propri, 
-            done):
+            mask):
         if not self._ignore_image:
-            self._images[self._idx] = image
-            self._next_images[self._idx] = next_image
+            idx1, idx2 = self._add_image(image, next_image)
+            self._images_idxs[self._idx] = idx1
+            self._next_images_idxs[self._idx] = idx2
+            
         if not self._ignore_propri:
             self._propris[self._idx] = propri
             self._next_propris[self._idx] = next_propri
         self._actions[self._idx] = action
         self._rewards[self._idx] = reward
-        self._dones[self._idx] = done
-
+        self._masks[self._idx] = mask
+        
+        if mask < 0.5:
+            self._is_first_step = True 
+            
         self._idx = (self._idx + 1) % self._capacity
         self._full = self._full or self._idx == 0
         self._count = self._capacity if self._full else self._idx
@@ -137,8 +166,10 @@ class ReplayBuffer():
             images = None
             next_images = None
         else:
-            images = self._images[idxs]
-            next_images = self._next_images[idxs]
+            idxs_1 = self._images_idxs[idxs]
+            idxs_2 = self._next_images_idxs[idxs]
+            images = self._images[idxs_1]
+            next_images = self._images[idxs_2]
 
         if self._ignore_propri:
             propris = None
@@ -149,13 +180,13 @@ class ReplayBuffer():
 
         actions = self._actions[idxs]
         rewards = self._rewards[idxs]
-        dones = self._dones[idxs]
+        masks = self._masks[idxs]
 
         return Batch(images=images, 
                      proprioceptions=propris,
                      actions=actions, 
                      rewards=rewards, 
-                     dones=dones,
+                     masks=masks,
                      next_images=next_images, 
                      next_proprioceptions=next_propris)
 
@@ -187,7 +218,7 @@ class ReplayBuffer():
 
             np.save(os.path.join(save_path, "actions.npy"), self._actions)
             np.save(os.path.join(save_path, "rewards.npy"), self._rewards)
-            np.save(os.path.join(save_path, "dones.npy"), self._dones)
+            np.save(os.path.join(save_path, "masks.npy"), self._masks)
 
         print("Saved the buffer locally,", end=' ')
         print("took: {:.3f}s.".format(time.time() - tic))
@@ -216,7 +247,7 @@ class ReplayBuffer():
 
         self._actions = np.load(os.path.join(self._load_path, "actions.npy"))
         self._rewards = np.load(os.path.join(self._load_path, "rewards.npy"))
-        self._dones = np.load(os.path.join(self._load_path, "dones.npy"))
+        self._masks = np.load(os.path.join(self._load_path, "masks.npy"))
 
         print("Loaded the buffer from: {}".format(self._load_path), end=' ')
         print("Took: {:.3f}s".format(time.time() - tic))
@@ -311,7 +342,7 @@ class AsyncSMReplayBuffer(ReplayBuffer):
         action_size = np.random.uniform(
             size=(batch_size, *self._action_shape)).astype(np.float32).nbytes
         
-        done_size = np.random.uniform(
+        mask_size = np.random.uniform(
             size=(batch_size,)).astype(np.float32).nbytes
         
         reward_size = np.random.uniform(
@@ -321,7 +352,7 @@ class AsyncSMReplayBuffer(ReplayBuffer):
             'img_sb_size': image_size,
             'proprioception_sb_size': proprioception_size, 
             'action_sb_size': action_size,
-            'done_sb_size': done_size,
+            'mask_sb_size': mask_size,
             'reward_sb_size': reward_size
             }
 
@@ -359,18 +390,18 @@ class AsyncSMReplayBuffer(ReplayBuffer):
 
 
         action_sm = shared_memory.SharedMemory(create=True, size=sizes['action_sb_size'])
-        done_sm = shared_memory.SharedMemory(create=True, size=sizes['done_sb_size'])
+        mask_sm = shared_memory.SharedMemory(create=True, size=sizes['mask_sb_size'])
         reward_sm = shared_memory.SharedMemory(create=True, size=sizes['reward_sb_size'])
 
         actions = np.ndarray((self._batch_size, *self._action_shape), 
                              dtype=np.float32, buffer=action_sm.buf)
-        dones = np.ndarray((self._batch_size,), dtype=np.float32, 
-                           buffer=done_sm.buf)
+        masks = np.ndarray((self._batch_size,), dtype=np.float32, 
+                           buffer=mask_sm.buf)
         rewards = np.ndarray((self._batch_size,), dtype=np.float32, 
                              buffer=reward_sm.buf)
         
         sb = Batch(images=images, proprioceptions=propris,
-                      actions=actions, rewards=rewards, dones=dones,
+                      actions=actions, rewards=rewards, masks=masks,
                       next_images=next_images, next_proprioceptions=next_propris)
         
         sm_names = {}
@@ -381,11 +412,11 @@ class AsyncSMReplayBuffer(ReplayBuffer):
             sm_names['proprioception_sm'] = proprioception_sm.name
             sm_names['next_proprioception_sm'] = next_proprioception_sm.name
         sm_names['action_sm'] = action_sm.name
-        sm_names['done_sm'] = done_sm.name
+        sm_names['mask_sm'] = mask_sm.name
         sm_names['reward_sm'] = reward_sm.name
         
         sms = (img_sm, next_img_sm,  proprioception_sm, 
-                next_proprioception_sm, action_sm, done_sm, reward_sm)
+                next_proprioception_sm, action_sm, mask_sm, reward_sm)
 
         return sb, sms, sm_names
     
@@ -401,7 +432,7 @@ class AsyncSMReplayBuffer(ReplayBuffer):
 
         np.copyto(batch_dest.actions, batch_src.actions)
         np.copyto(batch_dest.rewards, batch_src.rewards)
-        np.copyto(batch_dest.dones, batch_src.dones)
+        np.copyto(batch_dest.masks, batch_src.masks)
 
     def _get_sm_sb_sp(self, sm_names):
         total_size = 0
@@ -442,26 +473,26 @@ class AsyncSMReplayBuffer(ReplayBuffer):
 
         action_sm = shared_memory.SharedMemory(
             name=sm_names['action_sm'])
-        done_sm = shared_memory.SharedMemory(
-            name=sm_names['done_sm'])
+        mask_sm = shared_memory.SharedMemory(
+            name=sm_names['mask_sm'])
         reward_sm = shared_memory.SharedMemory(
             name=sm_names['reward_sm'])
         
         actions = np.ndarray((self._batch_size, *self._action_shape), 
                              dtype=np.float32, buffer=action_sm.buf)
-        dones = np.ndarray((self._batch_size,), dtype=np.float32, 
-                           buffer=done_sm.buf)
+        masks = np.ndarray((self._batch_size,), dtype=np.float32, 
+                           buffer=mask_sm.buf)
         rewards = np.ndarray((self._batch_size,), dtype=np.float32, 
                              buffer=reward_sm.buf)
         
-        total_size += actions.nbytes + dones.nbytes + rewards.nbytes
+        total_size += actions.nbytes + masks.nbytes + rewards.nbytes
         
         sb = Batch(images=images, proprioceptions=propris,
-                      actions=actions, rewards=rewards, dones=dones,
+                      actions=actions, rewards=rewards, masks=masks,
                       next_images=next_images, next_proprioceptions=next_propris)
               
         sms = (img_sm, next_img_sm,  proprioception_sm, 
-                next_proprioception_sm, action_sm, done_sm, reward_sm)
+                next_proprioception_sm, action_sm, mask_sm, reward_sm)
 
         return sb, sms, total_size
 

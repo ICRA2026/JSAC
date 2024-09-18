@@ -1,13 +1,13 @@
 import os
-
-import random
-import numpy as np
-import matplotlib.pyplot as plt
-import collections
-from gymnasium.core import Env
 import time
-import seaborn as sns
+import random
+import collections
+import numpy as np
 import pandas as pd
+import seaborn as sns
+from gymnasium import spaces
+from gymnasium.core import Env
+import matplotlib.pyplot as plt
 
 
 class MODE:
@@ -29,15 +29,12 @@ def set_seed_everywhere(seed, env=None):
     if env is not None:
         env.seed(seed)
 
-def show_learning_curve(fname, 
+def save_learning_curve(fname, 
                         returns, 
                         ep_lens, 
                         xtick):
-    sns.set(rc={'figure.figsize':(10, 7)})
+    sns.set_theme(rc={'figure.figsize':(10, 7)})
     sns.set_style("whitegrid")
-
-    # returns = np.array(returns, dtype=np.float32)
-    # ep_lens = np.array(ep_lens, dtype=np.int32)
 
     df = pd.DataFrame(columns=["Step", "Return"])
 
@@ -46,24 +43,57 @@ def show_learning_curve(fname,
     end_step = xtick
     data = []
     for (i, epi_s) in enumerate(ep_lens):
+        if steps + epi_s > end_step:
+            if len(rets) > 0:
+                data.append([end_step, sum(rets)/len(rets)]) 
+                rets = []
+            end_step += xtick
+        
         steps += epi_s 
         ret = returns[i]  
-        if steps >= end_step:
-            if len(rets) > 0:
-                data.append([end_step, sum(rets)/len(rets)])
-                rets = []
-            while end_step < steps:
-                end_step += xtick
         rets.append(ret) 
         
-    data.append([end_step, sum(rets)/len(rets)])
+    if len(rets) > 0:  
+        data.append([end_step, sum(rets)/len(rets)])
     df = pd.DataFrame(data, columns=["Step", "Return"])
-    ax1 = sns.lineplot(x="Step", y='Return', data=df, 
-                    color=sns.color_palette('bright')[0], 
-                    linewidth=1.5, errorbar=None)
+    sns.lineplot(x="Step", y='Return', data=df, 
+                 color=sns.color_palette('bright')[0], 
+                 linewidth=1.5, errorbar=None)
 
-    # ax1.get_legend().remove() 
     plt.title('Learning Curve')
+    plt.savefig(fname)
+    plt.close()
+    
+def save_eval_learning_curve(fname, 
+                             returns, 
+                             steps):
+    sns.set_theme(rc={'figure.figsize':(10, 7)})
+    sns.set_style("whitegrid")
+
+    df = pd.DataFrame(columns=["Step", "Return"])
+
+    curr_step = steps[0]
+    rets = [] 
+    data = []
+    for (i, step) in enumerate(steps):
+        if step != curr_step:
+            if len(rets) > 0:
+                data.append([curr_step, sum(rets)/len(rets)]) 
+                rets = []
+            curr_step = step
+         
+        ret = returns[i]  
+        rets.append(ret) 
+        
+    if len(rets) > 0:  
+        data.append([curr_step, sum(rets)/len(rets)])
+        
+    df = pd.DataFrame(data, columns=["Step", "Return"])
+    sns.lineplot(x="Step", y='Return', data=df, 
+                 color=sns.color_palette('bright')[0], 
+                 linewidth=1.5, errorbar=None)
+
+    plt.title('Eval Learning Curve')
     plt.savefig(fname)
     plt.close()
 
@@ -135,12 +165,12 @@ class WrappedEnv(Env):
 
         if not self._is_min_time and self._episode_max_steps > 0 \
             and self._episode_steps == self._episode_max_steps:
-            new_info['TimeLimit.truncated'] = True
+            new_info['truncated'] = True
 
         if 'TimeLimit.truncated' in info or 'truncated' in info:
-            new_info['TimeLimit.truncated'] = True
+            new_info['truncated'] = True
 
-        if done or (not self._is_min_time and 'TimeLimit.truncated' in new_info):
+        if done or (not self._is_min_time and 'truncated' in new_info):
             new_info['episode'] = self._episode
             new_info['step'] = self._total_steps
             new_info['episode_steps'] = self._episode_steps
@@ -156,7 +186,7 @@ class WrappedEnv(Env):
                 self._total_steps += self._steps_penalty
                 self._episode_steps += self._steps_penalty
                 
-                new_info['TimeLimit.truncated'] = True
+                new_info['truncated'] = True
                 new_info['episode'] = self._episode
                 new_info['sub_episode'] = self._sub_episode
                 new_info['sub_episode_steps'] = self._sub_episode_steps 
@@ -174,10 +204,13 @@ class WrappedEnv(Env):
 
     def step(self, action):
         # rescale the action
-        lb = self._wrapped_env.action_space.low
-        ub = self._wrapped_env.action_space.high
-        scaled_action = lb + (action + 1.) * 0.5 * (ub - lb)
-        scaled_action = np.clip(scaled_action, lb, ub)
+        if isinstance(self._wrapped_env.action_space, spaces.Box):
+            lb = self._wrapped_env.action_space.low
+            ub = self._wrapped_env.action_space.high
+            scaled_action = lb + (action + 1.) * 0.5 * (ub - lb)
+            scaled_action = np.clip(scaled_action, lb, ub)
+        else:
+            scaled_action = action
 
         wrapped_step = self._wrapped_env.step(scaled_action)
         next_obs, reward, done, info = wrapped_step
@@ -202,8 +235,10 @@ class WrappedEnv(Env):
         return self._wrapped_env.start()
 
     def close(self):
-        super(WrappedEnv, self).close()
+        if hasattr(super(), 'close'):
+            super().close()
         return self._wrapped_env.close()
+
 
     @property
     def action_space(self):
@@ -227,16 +262,23 @@ class WrappedEnv(Env):
         self._wrapped_env.set_param_values(params)
 
     def __getattr__(self, attr):
-        orig_attr = self.wrapped_env.__getattribute__(attr)
-        if callable(orig_attr):
-            def hooked(*args, **kwargs):
-                result = orig_attr(*args, **kwargs)
-                # prevent wrapped_class from becoming unwrapped
-                if result == self.wrapped_env:
-                    return self
-                return result
+        try:
+            orig_attr = self._wrapped_env.__getattribute__(attr)
+            if callable(orig_attr):
+                def hooked(*args, **kwargs):
+                    result = orig_attr(*args, **kwargs)
+                    # prevent wrapped_class from becoming unwrapped
+                    if result == self._wrapped_env:
+                        return self
+                    return result
+                return hooked
+            else:
+                return orig_attr
+        except AttributeError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
-            return hooked
-        else:
-            return orig_attr
 
+
+            
+            
+            

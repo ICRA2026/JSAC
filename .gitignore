@@ -3,9 +3,6 @@ __pycache__
 *.py[cod]
 *$py.class
 
-# Result folders
-results
-
 # C extensions
 *.so
 
@@ -130,8 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-plots/
-results/
 backups/
 remote/
 *err

@@ -1,8 +1,8 @@
 import cv2
+import numpy as np
 import gymnasium as gym
 from collections import deque
 from gymnasium.spaces import Box
-import numpy as np
 from jsac.helpers.utils import MODE
 
 
@@ -47,9 +47,11 @@ class MujocoVisualEnv(gym.Wrapper):
     def step(self, a):
         assert self._reset
         ob, reward, terminated, truncated, info = self.env.step(a)
-        done = terminated or truncated 
+        done = terminated
         ob = self._get_ob(ob)
-         
+        
+        if truncated:
+            info['truncated'] = True
 
         if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:
             new_img = self._get_new_img()
@@ -57,7 +59,7 @@ class MujocoVisualEnv(gym.Wrapper):
             self._latest_image = np.concatenate(self._image_buffer, 
                                                 axis=self._channel_axis)
 
-        if done:
+        if done or truncated:
             self._reset = False
 
         if self._mode == MODE.IMG:

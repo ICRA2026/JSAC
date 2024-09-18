@@ -1,15 +1,15 @@
-from collections import defaultdict
-import json
 import os
-import shutil
-import numpy as np
-from termcolor import colored
-from tensorboardX import SummaryWriter
-from jsac.helpers.utils import show_learning_curve
-from multiprocessing import Queue, Process
-import jaxlib
+import json
 import time
 import wandb
+import shutil 
+import jaxlib
+from termcolor import colored
+from collections import defaultdict
+from tensorboardX import SummaryWriter
+from multiprocessing import Queue, Process
+from jsac.helpers.utils import save_learning_curve, save_eval_learning_curve
+
 
 FORMAT_CONFIG = {
     'rl': {
@@ -26,8 +26,7 @@ FORMAT_CONFIG = {
             ('update_time', 'UT', 'float'),
             ('action_sample_time', 'AST', 'float'), 
             ('env_time', 'ENVT', 'float'),
-            ('elapsed_time', 'ELT', 'float'),
-            ('battery_charge', 'BC', 'int')
+            ('elapsed_time', 'ELT', 'float')
         ],
         'eval': [('step', 'S', 'int'), ('return', 'ER', 'float')]
     }
@@ -54,7 +53,6 @@ class AverageMeter(object):
         return self._sum / max(1, self._count)
         
 
-
 class MetersGroup(object):
     def __init__(self, file_name, formating):
         self._file_name = file_name
@@ -67,11 +65,13 @@ class MetersGroup(object):
                              'duration', 
                              'return', 
                              'step', 
+                             'eval_step',
                              'elapsed_time']
         self._int_value_items = ['num_updates', 
                                  'battery_charge', 
                                  'episode', 
                                  'episode_steps', 
+                                 'eval_step',
                                  'step']
 
     def log(self, key, value, n=1):
@@ -137,14 +137,15 @@ class MetersGroup(object):
 class Logger(object):
     def __init__(self, 
                  log_dir, 
-                 xtick, 
-                 args, 
+                 xtick=None, 
+                 args=None, 
                  use_tb=False, 
                  use_wandb=False, 
                  wandb_project_name='', 
                  wandb_run_name='', 
                  wandb_resume=False, 
-                 config='rl'):
+                 config='rl',
+                 eval=False):
         
         self._log_queue = Queue()
         self._log_dir = log_dir
@@ -156,11 +157,16 @@ class Logger(object):
         self._wandb_run_name = wandb_run_name
         self._wandb_resume = wandb_resume
         self._config = config
+        self._eval = eval
 
         self._log_process = Process(target=self._run)
         self._log_process.start()
         
     def push(self, data):
+        for k, v in data.items():
+            if isinstance(v, jaxlib.xla_extension.ArrayImpl):
+                data[k] = v.item()
+            
         self._log_queue.put(data)
     
     def plot(self):
@@ -199,24 +205,27 @@ class Logger(object):
 
         self._returns=[]
         self._episode_steps=[]
+        self._eval_step=[]
 
-        log_path = os.path.join(self._log_dir, 'train.log')
-        if os.path.exists(log_path):
-            with open(log_path, 'r') as ret_file:
-                for line in ret_file.readlines():
-                    dict = eval(line)
-                    self._returns.append(dict['return'])
-                    self._episode_steps.append(dict['episode_steps'])
+        if not self._eval:
+            log_path = os.path.join(self._log_dir, 'train.log')
+            if os.path.exists(log_path):
+                with open(log_path, 'r') as ret_file:
+                    for line in ret_file.readlines():
+                        dict = eval(line)
+                        self._returns.append(dict['return']) 
+                        self._episode_steps.append(dict['episode_steps'])
 
-        start_step = self._args['start_step']
-        config_name = f'config_{start_step}.txt'
-        config_path = os.path.join(self._log_dir, config_name) 
-        with open(config_path, 'w') as cfl:
-            for key, value in self._args.items():
-                cfl.write(f'{key} -> {value}')
-                cfl.write('\n\n')
+            start_step = self._args['start_step']
+            config_name = f'config_{start_step}.txt'
+            config_path = os.path.join(self._log_dir, config_name) 
+            with open(config_path, 'w') as cfl:
+                for key, value in self._args.items():
+                    cfl.write(f'{key} -> {value}')
+                    cfl.write('\n\n')
 
-        self._plot_path = os.path.join(self._log_dir, 'learning_curve.png') 
+        plot_name = 'eval_learning_curve' if self._eval else 'learning_curve'
+        self._plot_path = os.path.join(self._log_dir, f'{plot_name}.png') 
 
     def _run(self):
         self._init()
@@ -244,9 +253,9 @@ class Logger(object):
                     self._returns.append(v)
                 elif k == 'episode_steps':
                     self._episode_steps.append(v)
+                elif k == 'eval_step':
+                    self._eval_step.append(v)
 
-                if isinstance(v, jaxlib.xla_extension.ArrayImpl):
-                    v = v.item()
                 self._log(f'{tag}/{k}', v, step)
 
             if data['dump'] == True:
@@ -272,16 +281,19 @@ class Logger(object):
         self._eval_mg.dump(step, 'eval', self._sw, self._use_wandb)
 
     def _plot_returns(self):
-        show_learning_curve(self._plot_path, 
-                            self._returns, 
-                            self._episode_steps, 
-                            self._xtick)
+        if self._eval:
+            save_eval_learning_curve(self._plot_path, 
+                                     self._returns, 
+                                     self._eval_step)
+        else:
+            save_learning_curve(self._plot_path, 
+                                self._returns, 
+                                self._episode_steps, 
+                                self._xtick)
 
     def close(self):
         self._log_queue.put('close')
-        time.sleep(5)
+        time.sleep(0.5)
         if self._use_wandb:
             wandb.finish()
-
-    
 

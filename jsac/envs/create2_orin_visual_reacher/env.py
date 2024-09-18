@@ -3,8 +3,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import time
+import cv2
 import gym
+import time
 import logging
 import numpy as np
 import jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_config as create2_config
@@ -17,8 +18,7 @@ from jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_communica
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_observation import Create2ObservationFactory
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.sharedbuffer import SharedBuffer
 from jsac.envs.create2_orin_visual_reacher.depstech_camera_communicator import CameraCommunicator
-import cv2
-from statistics import mean
+
 
 class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     """Create2 environment for training it drive forward.

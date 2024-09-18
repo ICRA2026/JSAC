@@ -1,9 +1,13 @@
+import numpy as np 
 import gymnasium as gym
-from gymnasium.spaces import Box
 from dm_control import suite
 from collections import deque
-import numpy as np 
-from jsac.helpers.utils import MODE
+from gymnasium.spaces import Box
+
+class MODE:
+    IMG = 'img'
+    IMG_PROP = 'img_prop'
+    PROP = 'prop'
 
 
 # https://github.com/gauthamvasan/rl_suite/blob/main/rl_suite/envs/dm_control_wrapper.py
@@ -47,7 +51,8 @@ class DMCVisualEnv(gym.Wrapper):
                  image_history=3, 
                  image_width=160, 
                  image_height=120,
-                 cameras=2, 
+                 cameras=1, 
+                 action_repeat=-1,
                  img_type='hwc'):
         
         """
@@ -63,12 +68,19 @@ class DMCVisualEnv(gym.Wrapper):
                                task_name=task_name,
                                task_kwargs={'random': seed})
         
-        
         self._mode = mode
         self._img_type = img_type
         self._cameras = cameras
         self._image_height = image_height
         self._image_width = image_width
+
+        ## Action repeat
+        if action_repeat <= 0:
+            if self._mode == MODE.PROP:
+                action_repeat = 1
+            else:
+                action_repeat = 2
+        self._action_repeat = action_repeat
 
         if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:
             channel_size = cameras * image_history * 3
@@ -85,21 +97,24 @@ class DMCVisualEnv(gym.Wrapper):
             
         # Observation space
         self._obs_dim = 0
-        for key, val in self._env.observation_spec().items():
-            if val.shape:
-                self._obs_dim += val.shape[0]
+        for key, val in self._env.observation_spec().items(): 
+            if isinstance(val, np.ndarray):
+                self._obs_dim += val.size
             else:
                 self._obs_dim += 1
+
         
         # Action space
         self._action_dim = self._env.action_spec().shape[0]
 
         self._latest_image = None
         self._reset = False
+        
+        super(DMCVisualEnv, self).__init__(self._env)
 
     @property
     def image_space(self):
-        return Box(low=0, high=255, shape=self._image_shape)
+        return Box(low=0, high=255, shape=self._image_shape, dtype=np.uint8)
 
     @property
     def proprioception_space(self):
@@ -107,29 +122,32 @@ class DMCVisualEnv(gym.Wrapper):
     
     @property
     def observation_space(self):
-        return Box(shape=(self._obs_dim,), high=10, low=-10)
+        return Box(shape=(self._obs_dim,), high=10, low=-10, dtype=np.float32)
     
     @property
     def action_space(self):
-        return Box(shape=(self._action_dim,), high=1, low=-1)
+        return Box(shape=(self._action_dim,), high=1, low=-1, dtype=np.float32)
 
 
     def step(self, a):
         assert self._reset 
         
-        time_step = self._env.step(a)
+        reward = 0
+        for _ in range(self._action_repeat):
+            time_step = self._env.step(a)
+            reward += time_step.reward
+            if time_step.last():
+                break
+            
         ob = self._make_obs(time_step.observation)
-        reward = time_step.reward
         done = time_step.last()
         info = {}  
+        
+        if done and time_step.discount == 1.0:
+            info['truncated'] = True
 
-        if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP: 
-            images = []
-            for cam in range(self._cameras):
-                images.append(self._get_new_img(cam)) 
-            new_image = np.concatenate(images, 
-                                       axis=self._channel_axis)
-            self._image_buffer.append(new_image)
+        if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:  
+            self._image_buffer.append(self._get_img())
             self._latest_image = np.concatenate(self._image_buffer, 
                                                 axis=self._channel_axis)
 
@@ -147,23 +165,29 @@ class DMCVisualEnv(gym.Wrapper):
         ob = self._make_obs(time_step.observation)
         
         if self._mode == MODE.IMG or self._mode == MODE.IMG_PROP:
-            images = []
-            for cam in range(self._cameras):
-                images.append(self._get_new_img(cam)) 
-            new_image = np.concatenate(images, 
-                                       axis=self._channel_axis)
+            new_image = self._get_img()
             for _ in range(self._image_buffer.maxlen):
                 self._image_buffer.append(new_image)
             self._latest_image = np.concatenate(self._image_buffer, 
                                                 axis=self._channel_axis)
         
         self._reset = True
-        
+                
         if self._mode == MODE.IMG:
             return self._latest_image
         if self._mode == MODE.PROP:
             return ob
         return (self._latest_image, ob)
+
+    def _get_img(self):
+        if self._cameras == 1:
+            new_image = self._get_new_img(0)
+        else:
+            images = []
+            for cam in range(self._cameras):
+                images.append(self._get_new_img(cam)) 
+            new_image = np.concatenate(images, axis=self._channel_axis)
+        return new_image
 
     def _get_new_img(self, cam):
         img = self._env.physics.render(height=self._image_height, 

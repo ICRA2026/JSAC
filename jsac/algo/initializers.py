@@ -1,10 +1,11 @@
+import optax
+import numpy as np
 from jax import random
 from jax import numpy as jnp
-import optax
-from jsac.algo.models import ActorModel, CriticModel, Temperature
 from flax.training.train_state import TrainState
+
 from jsac.helpers.utils import MODE
-import numpy as np
+from jsac.algo.models import ActorModel, CriticModel, Temperature
 
 
 def get_init_data(init_image_shape, 
@@ -27,34 +28,33 @@ def init_critic(rng,
                 learning_rate, 
                 init_image_shape, 
                 init_proprioception_shape, 
-                action_dim, 
                 net_params, 
-                rad_offset, 
+                action_dim, 
                 spatial_softmax,
+                mode,
                 dtype,
-                mode):
+                num_critic_networks):
 
     model = CriticModel(net_params, 
                         action_dim, 
-                        rad_offset,
                         spatial_softmax,  
                         mode,
-                        dtype)
+                        dtype,
+                        num_critic_networks)
     
-    rng, *keys = random.split(rng, 4)
-    init_actions = random.uniform(keys[0], (1, action_dim), dtype=jnp.float32)
+    rng, key1, key2 = random.split(rng, 3)
+    init_actions = random.uniform(key1, (1, action_dim), dtype=jnp.float32)
 
     init_image, init_proprioception = get_init_data(
         init_image_shape, 
         init_proprioception_shape, 
         mode)
     
-    params = model.init(keys[1], 
-                        keys[2:],
+    params = model.init(key2, 
                         init_image, 
                         init_proprioception, 
                         init_actions)['params']
-    
+
     tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
 
     return rng, TrainState.create(apply_fn=model.apply, 
@@ -65,16 +65,14 @@ def init_critic(rng,
 def init_inference_actor(rng, 
                          init_image_shape, 
                          init_proprioception_shape, 
-                         action_dim, 
                          net_params, 
-                         rad_offset, 
+                         action_dim, 
                          spatial_softmax, 
-                         dtype,
-                         mode):
+                         mode,
+                         dtype):
     
     model = ActorModel(net_params,
                        action_dim,  
-                       rad_offset, 
                        spatial_softmax,
                        mode, 
                        dtype)
@@ -84,11 +82,11 @@ def init_inference_actor(rng,
         init_proprioception_shape, 
         mode)
 
-    rng, *keys = random.split(rng, 5)
-    model.init(keys[0], 
-               keys[1:],
+    rng, key1, key2 = random.split(rng, 3)
+    model.init(key1, 
+               key2,
                init_image, 
-               init_proprioception)['params']
+               init_proprioception)
 
     return rng, model
 
@@ -97,29 +95,27 @@ def init_actor(rng,
                learning_rate, 
                init_image_shape, 
                init_proprioception_shape, 
+               net_params,  
                action_dim, 
-               net_params, 
-               rad_offset, 
-               spatial_softmax,
-               dtype, 
-               mode):
+               spatial_softmax, 
+               mode, 
+               dtype):
     
     model = ActorModel(net_params,
                        action_dim,  
-                       rad_offset, 
                        spatial_softmax,
                        mode, 
                        dtype)
 
-    rng, *keys = random.split(rng, 5)
+    rng, key1, key2 = random.split(rng, 3)
     
     init_image, init_proprioception = get_init_data(
         init_image_shape, 
         init_proprioception_shape, 
         mode)
     
-    params = model.init(keys[0], 
-                        keys[1:],
+    params = model.init(key1, 
+                        key2,
                         init_image,
                         init_proprioception)['params']
     
@@ -133,8 +129,8 @@ def init_actor(rng,
                                   tx=tx)
 
 
-def init_temperature(rng, learning_rate, alpha=1.0):
-    model = Temperature(initial_temperature=alpha)
+def init_temperature(rng, learning_rate, alpha, dtype):
+    model = Temperature(initial_temperature=alpha, dtype=dtype)
     rng, key = random.split(rng)
     params = model.init(key)['params']
 
