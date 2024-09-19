@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import cv2
-import gym
+import gymnasium as gym
 import time
 import logging
 import numpy as np
@@ -90,7 +90,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         extra_sensor_packet_ids = [create2_config.PACKET_NAME_TO_ID[nm] for nm in self._extra_sensor_packets]
 
         # TODO: move this out to some base class?
-        from gym.spaces import Box as GymBox  # use this for baselines algos
+        from gymnasium.spaces import Box as GymBox  # use this for baselines algos
         Box = GymBox
 
         # go thru the main opcode (just direct_drive in this case) and add the range of each param
@@ -210,7 +210,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         #print('r_r:', r_r, "im_r:", im_r)
         done = self._check_done(r_d or im_d)
-
+        
         reward = r_r+im_r-1
         if self._dense_reward:
             reward = im_r

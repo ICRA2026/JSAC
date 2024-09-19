@@ -11,69 +11,64 @@ from jsac.helpers.logger import Logger
 from jsac.envs.create2_orin_visual_reacher.env import Create2VisualReacherEnv
 from jsac.helpers.utils import WrappedEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
-from threading import Thread
 import time
-from tensorboardX import SummaryWriter
 import argparse
 import shutil
 import multiprocessing as mp
-import numpy as np
 
 
 config = {
     'conv': [
         # in_channel, out_channel, kernel_size, stride
-        [-1, 32, 3, 2],
-        [32, 32, 3, 2],
-        [32, 32, 3, 2],
-        [32, 32, 3, 1],
+        [-1, 32, 5, 2],
+        [32, 32, 5, 2],
+        [32, 64, 3, 1],
+        [64, 64, 3, 1],
     ],
     
-    'latent': 50,
+    'latent_dim': 96,
 
-    'mlp': [1024, 1024],
+    'mlp': [512, 512],
 }
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='create2_orin_visual_back_reacher', type=str)
+    parser.add_argument('--name', default='create2_orin_reacher_dense', type=str)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-    parser.add_argument('--image_height', default=120, type=int)
-    parser.add_argument('--image_width', default=160, type=int)
-    parser.add_argument('--stack_frames', default=3, type=int)
+    parser.add_argument('--image_height', default=84, type=int)
+    parser.add_argument('--image_width', default=84, type=int)
+    parser.add_argument('--image_history', default=3, type=int)
 
     parser.add_argument('--camera_id', default=0, type=int)
     parser.add_argument('--episode_length_time', default=15.0, type=float)
-    parser.add_argument('--dt', default=0.045, type=float)
-    parser.add_argument('--min_target_size', default=0.2, type=float)
-    parser.add_argument('--reset_penalty_steps', default=67, type=int)
-    parser.add_argument('--min_charge', default=860, type=int)
-    parser.add_argument('--reward', default=-1, type=float)
+    parser.add_argument('--reward_scale', default=1.0, type=float)
+    parser.add_argument('--dt', default=0.06, type=float)
+    parser.add_argument('--min_target_size', default=1.0, type=float)
     parser.add_argument('--pause_before_reset', default=0, type=float)
     parser.add_argument('--pause_after_reset', default=0, type=float)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=2_000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=5000, type=int)
-    parser.add_argument('--env_steps', default=100000, type=int)
-    parser.add_argument('--task_timeout_mins', default=500, type=int)
-
+    parser.add_argument('--init_steps', default=700, type=int)
+    parser.add_argument('--env_steps', default=2_000, type=int)
+    parser.add_argument('--task_timeout_mins', default=100, type=int)
+    parser.add_argument('--min_charge', default=860, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
-    parser.add_argument('--apply_rad', default=True, action='store_true')
-    parser.add_argument('--rad_offset', default=0.01, type=float)
-    parser.add_argument('--calculate_grad_norm', default=True, action='store_true')
     
     # critic
-    parser.add_argument('--critic_lr', default=3e-4, type=float)
-    parser.add_argument('--critic_tau', default=0.01, type=float)
+    parser.add_argument('--critic_lr', default=3e-4, type=float) 
+    parser.add_argument('--num_critic_networks', default=5, type=int)
+    parser.add_argument('--num_critic_updates', default=2, type=int)
+    parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
+    
     
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
@@ -81,27 +76,27 @@ def parse_args():
     parser.add_argument('--actor_sync_freq', default=8, type=int)
     
     # encoder
-    parser.add_argument('--spatial_softmax', default=True, action='store_true')
+    parser.add_argument('--spatial_softmax', default=False, action='store_true')
     
     # sac
-    parser.add_argument('--discount', default=0.99, type=float)
+    parser.add_argument('--temp_lr', default=3e-4, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
-    parser.add_argument('--temp_lr', default=1e-4, type=float)
+    parser.add_argument('--discount', default=0.99, type=float)
     
     # misc
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
     parser.add_argument('--xtick', default=1000, type=int)
-    parser.add_argument('--save_wandb', default=True, action='store_true')
+    parser.add_argument('--save_wandb', default=False, action='store_true')
 
-    parser.add_argument('--save_model', default=True, action='store_true')
+    parser.add_argument('--save_model', default=False, action='store_true')
     parser.add_argument('--save_model_freq', default=20000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
 
-    parser.add_argument('--buffer_save_path', default='.', type=str)
+    parser.add_argument('--buffer_save_path', default='', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
 
     args = parser.parse_args()
@@ -115,17 +110,17 @@ def main(seed=-1):
     task_start_time = time.time()
     args = parse_args()
 
+    if seed != -1:
+        args.seed = seed
+
     RF_CONTINUE = 0
     RF_END_RUN_WO_SAVE = 1
     RF_END_RUN_W_SAVE = 2
 
-    assert args.mode == MODE.IMG_PROP
-    assert args.sync_mode == False
+    assert args.mode == MODE.IMG_PROP and args.sync_mode == False
 
-    if seed != -1:
-        args.seed = seed
-
-    args.work_dir += f'/results/{args.name}/seed_{args.seed}/'
+    args.name = f'{args.name}_{args.mode}'
+    args.work_dir += f'/results/{args.name}/seed_{args.seed}'
 
     if os.path.exists(args.work_dir):
         inp = input('The work directory already exists. ' +
@@ -159,19 +154,22 @@ def main(seed=-1):
         args.buffer_load_path = os.path.join(args.work_dir, 'buffers')
 
     args.model_dir = os.path.join(args.work_dir, 'checkpoints') 
+    if args.save_model:
+        make_dir(args.model_dir)
+        
     args.net_params = config
 
     if args.save_wandb:
         wandb_project_name = f'{args.name}'
         wandb_run_name=f'seed_{args.seed}'
-        L = Logger(args.work_dir, args.xtick, vars(args), args.save_tensorboard, 
-                   args.save_wandb, wandb_project_name, wandb_run_name, 
-                   args.start_step > 1)
+        L = Logger(args.work_dir, args.xtick, vars(args), 
+                   args.save_tensorboard, args.save_wandb, wandb_project_name, 
+                   wandb_run_name, args.start_step > 1)
     else:
-        L = Logger(args.work_dir, args.xtick, vars(args), args.save_tensorboard, 
-                   args.save_wandb)
+        L = Logger(args.work_dir, args.xtick, vars(args), 
+                   args.save_tensorboard, args.save_wandb)
 
-    image_shape = (args.image_height, args.image_width, 3*args.stack_frames)
+    image_shape = (args.image_height, args.image_width, 3*args.image_history)
 
     env = Create2VisualReacherEnv(
         episode_length_time=args.episode_length_time, 
@@ -180,14 +178,13 @@ def main(seed=-1):
         camera_id=args.camera_id,
         min_target_size=args.min_target_size,
         pause_before_reset=args.pause_before_reset,
-        pause_after_reset=args.pause_after_reset)
+        pause_after_reset=args.pause_after_reset,
+        dense_reward=True)
     
-    episode_length_step = int(args.episode_length_time / args.dt)
+    episode_length_step = int(args.episode_length_time // args.dt)
     env = WrappedEnv(env, 
                      episode_max_steps=episode_length_step,
-                     is_min_time=True,
-                     reward_penalty=args.reset_penalty_steps * args.reward,
-                     steps_penalty=args.reset_penalty_steps,
+                     is_min_time=False,
                      start_step = args.start_step,
                      start_episode = args.start_episode)
     
@@ -197,64 +194,61 @@ def main(seed=-1):
     args.image_shape = env.image_space.shape
     args.proprioception_shape = env.observation_space.shape
     args.action_shape = env.action_space.shape
-    action_dim = args.action_shape[-1]
     args.env_action_space = env.action_space
 
     if args.sync_mode:
-        agent = SACRADAgent(args)
+        agent = SACRADAgent(vars(args))
     else:
-        agent = AsyncSACRADAgent(args)
+        agent = AsyncSACRADAgent(vars(args))
 
+    task_end_time = task_start_time + (args.task_timeout_mins * 60)
+    state = env.reset()
+    first_step = True
     update_paused = True
     pause_for_update = True
 
-    (image, proprioception) = env.reset()
-
     while env.total_steps < args.env_steps:
         t1 = time.time()
-        action = agent.sample_actions((image, proprioception))
+        if env.total_steps < args.init_steps + 100:
+            action = env.action_space.sample()
+        else:
+            action = agent.sample_actions(state)
         t2 = time.time()
-        (next_image, next_proprioception), reward, done, info = env.step(action)
+        next_state, reward, done, info = env.step(action)
         t3 = time.time()
-        
-        mask = 0.0 if done else 1.0
-        agent.add((image, proprioception), action, reward, 
-                  (next_image, next_proprioception),  mask)
-        image = next_image
-        proprioception = next_proprioception
 
-        if done or 'TimeLimit.truncated' in info:
+        done = True if done > 0.5 else False
+        mask = 1.0 if not done or 'truncated' in info else 0.0
+
+        agent.add(state, action, reward, next_state, mask, first_step)
+        first_step = False
+        state = next_state
+
+        if done or 'truncated' in info:
             charge = info['battery_charge']
-            elapsed_time = "{:.3f}".format(time.time() - task_start_time)
 
-            if done:
-                info['tag'] = 'train'
-                info['elapsed_time'] = time.time() - task_start_time
-                info['dump'] = True
-                L.push(info)
-                (image, proprioception) = env.reset()
-            else:
-                episode = info['episode']
-                sub_epi = info['sub_episode']
-                print(f'>> Episode {episode}, sub-episode {sub_epi} done. ' + 
-                  f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s')
-                (image, proprioception) = env.reset(reset_stats=False)
+            info['tag'] = 'train'
+            info['elapsed_time'] = time.time() - task_start_time
+            info['dump'] = True
+            L.push(info)
+            state = env.reset() 
+            first_step = True
 
             rf = get_run_flag()
-            if rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:
+            if time.time() > task_end_time or \
+                rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:
                 break
-                
+
             if charge < args.min_charge:
                 update_paused = True
                 agent.pause_update()
                 
-
             if update_paused and env.total_steps >= args.init_steps \
                 and charge > args.min_charge:
                 agent.resume_update()
                 update_paused = False
                 if pause_for_update:
-                    time.sleep(20)
+                    time.sleep(30)
                     pause_for_update = False
 
         if not update_paused and env.total_steps >= args.init_steps:
@@ -274,7 +268,7 @@ def main(seed=-1):
         if args.save_model and env.total_steps % args.save_model_freq == 0 and \
             env.total_steps < args.env_steps:
             agent.checkpoint(env.total_steps)
-    
+            
     agent.pause_update()
     env.close()
 
@@ -296,4 +290,3 @@ def main(seed=-1):
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     main()
-

@@ -64,7 +64,7 @@ class Encoder(nn.Module):
                         param_dtype=self.dtype,
                         name=layer_name)(x) 
             if i < len(conv_params) - 1:
-                x = nn.relu(x)
+                x = nn.leaky_relu(x)
                 
         b, height, width, channel = x.shape
         if self.spatial_softmax:

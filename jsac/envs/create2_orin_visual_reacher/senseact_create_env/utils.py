@@ -6,7 +6,7 @@
 import random
 import numpy as np
 import collections
-from gym.core import Env
+from gymnasium.core import Env
 
 Step = collections.namedtuple("Step", ["observation", "reward", "done", "info"])
 

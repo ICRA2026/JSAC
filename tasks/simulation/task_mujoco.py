@@ -184,21 +184,27 @@ def main(seed=-1):
 
     update_paused = True
     state = env.reset()
+    first_step = True
 
     while env.total_steps < args.env_steps:
         t1 = time.time()
-        action = agent.sample_actions(state)
+        if env.total_steps < args.init_steps + 100:
+            action = env.action_space.sample()
+        else:
+            action = agent.sample_actions(state)
         t2 = time.time()
         next_state, reward, done, info = env.step(action)
         t3 = time.time()
 
         mask = 1.0 if not done or 'truncated' in info else 0.0
         
-        agent.add(state, action, reward, next_state, mask)
+        agent.add(state, action, reward, next_state, mask, first_step)
+        first_step = False
         state = next_state
 
         if done or 'truncated' in info:
             state = env.reset()
+            first_step = True
             info['tag'] = 'train'
             info['elapsed_time'] = time.time() - task_start_time
             info['dump'] = True

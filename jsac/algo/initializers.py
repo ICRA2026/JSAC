@@ -55,7 +55,9 @@ def init_critic(rng,
                         init_proprioception, 
                         init_actions)['params']
 
-    tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
+    # tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
+    tx=optax.chain(optax.clip_by_global_norm(20), 
+                   optax.adam(learning_rate, mu_dtype=dtype))
 
     return rng, TrainState.create(apply_fn=model.apply, 
                                   params=params, 

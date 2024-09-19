@@ -136,7 +136,8 @@ class ReplayBuffer():
             reward, 
             next_image, 
             next_propri, 
-            mask):
+            mask,
+            first_step):
         if not self._ignore_image:
             idx1, idx2 = self._add_image(image, next_image)
             self._images_idxs[self._idx] = idx1
@@ -149,8 +150,7 @@ class ReplayBuffer():
         self._rewards[self._idx] = reward
         self._masks[self._idx] = mask
         
-        if mask < 0.5:
-            self._is_first_step = True 
+        self._is_first_step = first_step 
             
         self._idx = (self._idx + 1) % self._capacity
         self._full = self._full or self._idx == 0
