@@ -2,9 +2,9 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
-import time 
+import time
 import shutil
-import argparse 
+import argparse
 import multiprocessing as mp
 
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
@@ -41,9 +41,9 @@ def parse_args():
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--env_name', default='cheetah', type=str)
-    parser.add_argument('--image_height', default=84, type=int)
-    parser.add_argument('--image_width', default=84, type=int)
-    parser.add_argument('--image_history', default=3, type=int)
+    parser.add_argument('--image_height', default=84, type=int)     # Mode: img, img_prop
+    parser.add_argument('--image_width', default=84, type=int)      # Mode: img, img_prop     
+    parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
     parser.add_argument('--action_repeat', default=4, type=int)
 
     # replay buffer
@@ -65,11 +65,11 @@ def parse_args():
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    parser.add_argument('--actor_sync_freq', default=8, type=int)
+    parser.add_argument('--actor_sync_freq', default=8, type=int)   # Sync mode: False
     
     # encoder
-    parser.add_argument('--spatial_softmax', default=False, action='store_true')
-    
+    parser.add_argument('--spatial_softmax', default=False, action='store_true')    # Mode: img, img_prop
+
     # sac
     parser.add_argument('--temp_lr', default=3e-4, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
@@ -170,13 +170,12 @@ def main(seed=-1):
     set_seed_everywhere(seed=args.seed)
 
     args.image_shape = env.image_space.shape
-    args.single_image_shape = (args.image_width, args.image_height, 3*args.num_cameras)
     args.proprioception_shape = env.proprioception_space.shape
     args.action_shape = env.action_space.shape
     args.env_action_space = env.action_space
-    
+
     if args.sync_mode:
-        agent = SACRADAgent(vars(args))
+        agent = SACRADAgent(vars(args)) 
     else:
         agent = AsyncSACRADAgent(vars(args))
         
@@ -204,7 +203,7 @@ def main(seed=-1):
         t3 = time.time()
 
         mask = 1.0 if not done or 'truncated' in info else 0.0
-
+        
         agent.add(state, action, reward, next_state, mask, first_step)
         first_step = False
         state = next_state

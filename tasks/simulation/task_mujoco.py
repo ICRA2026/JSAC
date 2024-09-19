@@ -24,11 +24,11 @@ config = {
         # in_channel, out_channel, kernel_size, stride
         [-1, 32, 5, 2],
         [32, 32, 5, 2],
-        [32, 64, 3, 2],
+        [32, 64, 3, 1],
         [64, 64, 3, 1],
     ],
     
-    'latent_dim': 128,
+    'latent_dim': 96,
 
     'mlp': [512, 512],
 }
@@ -163,7 +163,6 @@ def main(seed=-1):
     set_seed_everywhere(seed=args.seed)
 
     args.image_shape = env.image_space.shape
-    args.single_image_shape = (args.image_width, args.image_height, 3)
     args.proprioception_shape = env.proprioception_space.shape
     args.action_shape = env.action_space.shape
     args.env_action_space = env.action_space
@@ -240,10 +239,11 @@ def main(seed=-1):
         agent.pause_update()
     if args.save_model:
         agent.checkpoint(env.total_steps)
-    
+        
     if args.eval_steps > 0:    
         eval_queue.put('close')
         eval_process.join()
+        
     L.plot()
     L.close()
 
