@@ -46,10 +46,6 @@ class ReplayBuffer():
         
         self._min_episode_length = min_episode_length
 
-        self._idx = 0
-        self._full = False
-        self._count = 0
-        self._steps = 0
         self._lock = Lock()
 
         self._ignore_image = True
@@ -75,6 +71,11 @@ class ReplayBuffer():
         if self._load_path:
             total_size = self._load()
         else:
+            self._idx = 0
+            self._full = False
+            self._count = 0
+            self._steps = 0
+                
             if not self._ignore_image: 
                 self._image_cap = self._capacity + ((self._capacity // self._min_episode_length) * 2) 
         
@@ -83,12 +84,16 @@ class ReplayBuffer():
                 self._images_idxs = np.empty((self._capacity,), dtype=np.int32)
                 self._next_images_idxs = np.empty((self._capacity,), dtype=np.int32)
                 
-                self._is_first_step = True
                 self._im_idx = 0
                 self._last_im_idx = -1
                 
                 total_size += self._images.nbytes + self._images_idxs.nbytes + \
                     self._next_images_idxs.nbytes
+                    
+            else:
+                self._image_cap = -1
+                self._im_idx = -1
+                self._last_im_idx = -1
 
             if not self._ignore_propri:
                 self._propris = np.empty(
@@ -113,9 +118,8 @@ class ReplayBuffer():
         
         return total_size
 
-    def _add_image(self, image, next_image):
-        if self._is_first_step:
-            self._is_first_step = False
+    def _add_image(self, image, next_image, first_step):
+        if first_step: 
             idx1 = self._im_idx
             idx2 = (self._im_idx + 1) % self._image_cap
             self._images[idx1] = image
@@ -139,7 +143,7 @@ class ReplayBuffer():
             mask,
             first_step):
         if not self._ignore_image:
-            idx1, idx2 = self._add_image(image, next_image)
+            idx1, idx2 = self._add_image(image, next_image, first_step)
             self._images_idxs[self._idx] = idx1
             self._next_images_idxs[self._idx] = idx2
             
@@ -149,8 +153,6 @@ class ReplayBuffer():
         self._actions[self._idx] = action
         self._rewards[self._idx] = reward
         self._masks[self._idx] = mask
-        
-        self._is_first_step = first_step 
             
         self._idx = (self._idx + 1) % self._capacity
         self._full = self._full or self._idx == 0
@@ -196,10 +198,13 @@ class ReplayBuffer():
         print(f'Saving the replay buffer in {save_path}..')
         with self._lock:
             data = {
-                'count': self._count,
                 'idx': self._idx,
                 'full': self._full,
-                'steps': self._steps
+                'count': self._count,
+                'steps': self._steps,
+                'image_cap': self._image_cap,
+                'im_idx': self._im_idx,
+                'last_im_idx': self._last_im_idx,
             }
 
             with open(os.path.join(save_path, "buffer_data.pkl"),
@@ -207,9 +212,9 @@ class ReplayBuffer():
                 pickle.dump(data, handle, protocol=4)
 
             if not self._ignore_image:
-                np.save(os.path.join(save_path, "images.npy"), self._images)
-                np.save(os.path.join(save_path, "next_images.npy"),
-                        self._next_images)
+                np.save(os.path.join(save_path, "images.npy"), self._images) 
+                np.save(os.path.join(save_path, "images_idxs.npy"), self._images_idxs)
+                np.save(os.path.join(save_path, "next_images_idxs.npy"), self._next_images_idxs)
 
             if not self._ignore_propri:
                 np.save(os.path.join(save_path, "propris.npy"), self._propris)
@@ -229,15 +234,18 @@ class ReplayBuffer():
 
         data = pickle.load(open(os.path.join(self._load_path,
                                              "buffer_data.pkl"), "rb"))
-        self._count = data['count']
         self._idx = data['idx']
         self._full = data['full']
+        self._count = data['count']
         self._steps = data['steps']
+        self._image_cap = data['image_cap']
+        self._im_idx = data['im_idx']
+        self._last_im_idx = data['last_im_idx']
 
         if not self._ignore_image:
             self._images = np.load(os.path.join(self._load_path, "images.npy"))
-            self._next_images = np.load(os.path.join(self._load_path,
-                                                     "next_images.npy"))
+            self._images_idxs = np.load(os.path.join(self._load_path, "images_idxs.npy"))
+            self._next_images_idxs = np.load(os.path.join(self._load_path, "next_images_idxs.npy"))
 
         if not self._ignore_propri:
             self._propris = np.load(os.path.join(self._load_path,

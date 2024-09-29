@@ -137,8 +137,10 @@ class BaseAgent:
 
         t1 = time.time()
         
-        batch = self._replay_buffer.sample()
-
+        time.sleep(0.02)
+         
+        batch = self._replay_buffer.sample() 
+                
         self._rng, actor, critic, critic_target_params, temp, info = update_jit(
             self._rng,
             self._actor,

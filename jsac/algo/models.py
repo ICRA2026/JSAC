@@ -119,6 +119,7 @@ class ActorModel(nn.Module):
             x = nn.LayerNorm()(x)
             x = nn.tanh(x)
             if self.mode == MODE.IMG_PROP:
+                proprioceptions = jnp.clip(proprioceptions, -10, 10)
                 x = jnp.concatenate(axis = -1, arrays=(x, proprioceptions))
         else:
             x = proprioceptions 
@@ -177,6 +178,7 @@ class CriticModel(nn.Module):
             x = nn.LayerNorm()(x)
             x = nn.tanh(x)
             if self.mode == MODE.IMG_PROP:
+                proprioceptions = jnp.clip(proprioceptions, -10, 10)
                 x = jnp.concatenate(axis = -1, arrays=(x, proprioceptions))
         else:
             x = proprioceptions 

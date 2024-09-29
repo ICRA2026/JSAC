@@ -4,6 +4,9 @@ from jax import random, numpy as jnp
 
 from jsac.algo.replay_buffer import Batch
 
+
+KP = 3
+
 def critic_update(rng, 
                   actor, 
                   critic, 
@@ -52,6 +55,8 @@ def critic_update(rng,
     
     grads, info = jax.grad(critic_loss_fn, has_aux=True)(critic.params)
     critic_new = critic.apply_gradients(grads=grads)
+    clipped_params = jax.tree_util.tree_map(lambda x: jnp.clip(x, -KP, KP), critic_new.params)
+    critic_new = critic_new.replace(params=clipped_params)
     return rng, critic_new, info
 
 
@@ -93,6 +98,8 @@ def actor_update(rng,
 
     grads, info = jax.grad(actor_loss_fn, has_aux=True)(actor.params)
     actor_new = actor.apply_gradients(grads=grads)
+    clipped_params = jax.tree_util.tree_map(lambda x: jnp.clip(x, -KP, KP), actor_new.params)
+    actor_new = actor_new.replace(params=clipped_params)
     return rng, actor_new, info
 
 
