@@ -8,6 +8,8 @@ from jsac.helpers.utils import MODE
 from jsac.algo.models import ActorModel, CriticModel, Temperature
 
 
+GN = 3
+
 def get_init_data(init_image_shape, 
                   init_proprioception_shape, 
                   mode):
@@ -56,7 +58,8 @@ def init_critic(rng,
                         init_actions)['params']
 
     # tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
-    tx=optax.chain(optax.clip_by_global_norm(20), 
+    tx=optax.chain(optax.zero_nans(), 
+                   optax.clip_by_global_norm(GN), 
                    optax.adam(learning_rate, mu_dtype=dtype))
 
     return rng, TrainState.create(apply_fn=model.apply, 
@@ -124,7 +127,9 @@ def init_actor(rng,
     if mode==MODE.IMG_PROP or mode==MODE.IMG:
         params['encoder'] = critic.params['encoder']
     
-    tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
+    tx=optax.chain(optax.zero_nans(), 
+                   optax.clip_by_global_norm(GN), 
+                   optax.adam(learning_rate, mu_dtype=dtype))
     
     return rng, TrainState.create(apply_fn=model.apply, 
                                   params=params, 

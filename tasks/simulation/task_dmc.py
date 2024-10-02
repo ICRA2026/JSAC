@@ -14,8 +14,8 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 
 from jsac.helpers.logger import Logger
 from jsac.helpers.eval import start_eval_process
-from jsac.envs.dmc_visual_env.dmc_env import DMCVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
+from jsac.envs.dmc_visual_env.dmc_env import DMCVisualEnv
 from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 
 
@@ -28,9 +28,9 @@ config = {
         [64, 64, 3, 1],
     ],
     
-    'latent_dim': 96,
+    'latent_dim': 64,
 
-    'mlp': [512, 512],
+    'mlp': [1024, 1024],
 }
 
 def parse_args():
@@ -41,10 +41,10 @@ def parse_args():
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--env_name', default='cheetah', type=str)
-    parser.add_argument('--image_height', default=84, type=int)     # Mode: img, img_prop
-    parser.add_argument('--image_width', default=84, type=int)      # Mode: img, img_prop     
+    parser.add_argument('--image_height', default=96, type=int)     # Mode: img, img_prop
+    parser.add_argument('--image_width', default=96, type=int)      # Mode: img, img_prop     
     parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
-    parser.add_argument('--action_repeat', default=4, type=int)
+    parser.add_argument('--action_repeat', default=2, type=int)
 
     # replay buffer
     parser.add_argument('--replay_buffer_capacity', default=500_000, type=int)
@@ -58,7 +58,7 @@ def parse_args():
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
     parser.add_argument('--num_critic_networks', default=5, type=int)
-    parser.add_argument('--num_critic_updates', default=2, type=int)
+    parser.add_argument('--num_critic_updates', default=1, type=int)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
@@ -262,6 +262,5 @@ def main(seed=-1):
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
-
     main()
 
