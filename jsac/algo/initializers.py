@@ -8,7 +8,7 @@ from jsac.helpers.utils import MODE
 from jsac.algo.models import ActorModel, CriticModel, Temperature
 
 
-GN = 3
+GN = 3.0
 
 def get_init_data(init_image_shape, 
                   init_proprioception_shape, 
