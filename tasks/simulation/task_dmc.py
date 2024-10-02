@@ -56,14 +56,14 @@ def parse_args():
     parser.add_argument('--sync_mode', default=True, action='store_true')
     
     # critic
-    parser.add_argument('--critic_lr', default=1e-4, type=float) 
+    parser.add_argument('--critic_lr', default=3e-4, type=float) 
     parser.add_argument('--num_critic_networks', default=5, type=int)
     parser.add_argument('--num_critic_updates', default=1, type=int)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
-    parser.add_argument('--actor_lr', default=1e-4, type=float)
+    parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
     parser.add_argument('--actor_sync_freq', default=8, type=int)   # Sync mode: False
     
@@ -71,7 +71,7 @@ def parse_args():
     parser.add_argument('--spatial_softmax', default=False, action='store_true')    # Mode: img, img_prop
 
     # sac
-    parser.add_argument('--temp_lr', default=1e-4, type=float)
+    parser.add_argument('--temp_lr', default=3e-4, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
     parser.add_argument('--discount', default=0.99, type=float)
     
