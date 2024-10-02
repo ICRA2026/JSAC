@@ -136,8 +136,6 @@ class BaseAgent:
         self._update_step += 1
 
         t1 = time.time()
-        
-        time.sleep(0.02)
          
         batch = self._replay_buffer.sample() 
                 
