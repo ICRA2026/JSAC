@@ -28,9 +28,9 @@ config = {
         [64, 64, 3, 1],
     ],
     
-    'latent_dim': 96,
+    'latent_dim': 64,
 
-    'mlp': [512, 512],
+    'mlp': [1024, 1024],
 }
 
 def parse_args():
@@ -41,8 +41,8 @@ def parse_args():
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--env_name', default='Hopper-v4', type=str)
-    parser.add_argument('--image_height', default=84, type=int)     # Mode: img, img_prop
-    parser.add_argument('--image_width', default=84, type=int)      # Mode: img, img_prop     
+    parser.add_argument('--image_height', default=96, type=int)     # Mode: img, img_prop
+    parser.add_argument('--image_width', default=96, type=int)      # Mode: img, img_prop     
     parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
 
     # replay buffer
@@ -57,7 +57,7 @@ def parse_args():
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
     parser.add_argument('--num_critic_networks', default=5, type=int)
-    parser.add_argument('--num_critic_updates', default=2, type=int)
+    parser.add_argument('--num_critic_updates', default=1, type=int)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
@@ -76,7 +76,7 @@ def parse_args():
     
     # misc
     parser.add_argument('--update_every', default=1, type=int)
-    parser.add_argument('--log_every', default=20, type=int)
+    parser.add_argument('--log_every', default=2, type=int)
     parser.add_argument('--eval_steps', default=10_000, type=int)
     parser.add_argument('--num_eval_episodes', default=10, type=int)
     parser.add_argument('--work_dir', default='.', type=str)
@@ -255,6 +255,5 @@ def main(seed=-1):
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
-
     main()
 

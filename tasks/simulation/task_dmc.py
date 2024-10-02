@@ -14,8 +14,8 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 
 from jsac.helpers.logger import Logger
 from jsac.helpers.eval import start_eval_process
-from jsac.envs.dmc_visual_env.dmc_env import DMCVisualEnv
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
+from jsac.envs.dmc_visual_env.dmc_env import DMCVisualEnv
 from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
 
 
@@ -262,6 +262,5 @@ def main(seed=-1):
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
-
     main()
 

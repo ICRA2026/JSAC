@@ -32,11 +32,10 @@ def critic_update(rng,
         next_actions)                          
     
     target_Qs = jnp.transpose(target_Qs) 
-    subset_indices = random.choice(key_tq, target_Qs.shape[-1], (2,), replace=False)
-    target_Qs_subset = target_Qs[..., subset_indices]
-    target_Q_min = jnp.min(target_Qs_subset, axis=1)
+    target_Q_min = jnp.min(target_Qs, axis=1)
     target_V = target_Q_min - temp.apply_fn({"params": temp.params}) * next_log_probs
     target_Q = batch.rewards + (batch.masks * discount * target_V) 
+    target_Q = jnp.expand_dims(target_Q, -1)
 
     def critic_loss_fn(critic_params):
         qs = critic.apply_fn( 
@@ -44,9 +43,8 @@ def critic_update(rng,
             batch.images, 
             batch.proprioceptions, 
             batch.actions)      
-        qs  = jnp.transpose(qs) 
-        l = qs - target_Q[:, None]
-        critic_loss = jnp.mean(l**2)
+        qs  = jnp.transpose(qs)   
+        critic_loss = jnp.mean((qs - target_Q)**2)
         
         return critic_loss, {
             'critic_loss': critic_loss,
@@ -88,7 +86,6 @@ def actor_update(rng,
             actions)                      
         
         q = jnp.min(qs, axis=0) 
-        # q = jnp.mean(qs, axis=0) 
         
         actor_loss = (log_probs * temp.apply_fn({"params": temp.params}) - q).mean()
         return actor_loss, {

@@ -133,6 +133,7 @@ remote/
 *out
 buffers/
 wandb/
+*results*
 
 # PhpStorm
 .idea
