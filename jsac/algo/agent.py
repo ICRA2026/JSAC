@@ -86,7 +86,8 @@ class BaseAgent:
             self._spatial_softmax,
             self._mode,
             self._dtype,
-            self._num_critic_networks)
+            self._num_critic_networks,
+            self._global_norm)
         self._critic_target_params = copy.deepcopy(self._critic.params)
 
         self._rng, self._actor = init_actor(
@@ -99,7 +100,8 @@ class BaseAgent:
             self._action_dim, 
             self._spatial_softmax, 
             self._mode,
-            self._dtype)
+            self._dtype,
+            self._global_norm)
 
         self._rng, self._temp = init_temperature(
             self._rng, self._temp_lr, self._init_temperature, self._dtype)

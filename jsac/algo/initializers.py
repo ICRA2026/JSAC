@@ -8,8 +8,6 @@ from jsac.helpers.utils import MODE
 from jsac.algo.models import ActorModel, CriticModel, Temperature
 
 
-GN = 1.0
-
 def get_init_data(init_image_shape, 
                   init_proprioception_shape, 
                   mode):
@@ -35,7 +33,8 @@ def init_critic(rng,
                 spatial_softmax,
                 mode,
                 dtype,
-                num_critic_networks):
+                num_critic_networks,
+                global_norm):
 
     model = CriticModel(net_params, 
                         action_dim, 
@@ -59,7 +58,7 @@ def init_critic(rng,
 
     # tx = optax.adam(learning_rate=learning_rate, mu_dtype=dtype)
     tx=optax.chain(optax.zero_nans(), 
-                   optax.clip_by_global_norm(GN), 
+                   optax.clip_by_global_norm(global_norm), 
                    optax.adam(learning_rate, mu_dtype=dtype))
 
     return rng, TrainState.create(apply_fn=model.apply, 
@@ -104,7 +103,8 @@ def init_actor(rng,
                action_dim, 
                spatial_softmax, 
                mode, 
-               dtype):
+               dtype, 
+               global_norm):
     
     model = ActorModel(net_params,
                        action_dim,  
@@ -128,7 +128,7 @@ def init_actor(rng,
         params['encoder'] = critic.params['encoder']
     
     tx=optax.chain(optax.zero_nans(), 
-                   optax.clip_by_global_norm(GN), 
+                   optax.clip_by_global_norm(global_norm), 
                    optax.adam(learning_rate, mu_dtype=dtype))
     
     return rng, TrainState.create(apply_fn=model.apply, 
