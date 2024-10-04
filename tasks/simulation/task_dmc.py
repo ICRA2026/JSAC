@@ -58,7 +58,7 @@ def parse_args():
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
     parser.add_argument('--num_critic_networks', default=5, type=int)
-    parser.add_argument('--num_critic_updates', default=1, type=int)
+    parser.add_argument('--num_critic_updates', default=2, type=int)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     

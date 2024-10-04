@@ -57,7 +57,7 @@ def parse_args():
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
     parser.add_argument('--num_critic_networks', default=5, type=int)
-    parser.add_argument('--num_critic_updates', default=1, type=int)
+    parser.add_argument('--num_critic_updates', default=2, type=int)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
@@ -76,7 +76,7 @@ def parse_args():
     
     # misc
     parser.add_argument('--update_every', default=1, type=int)
-    parser.add_argument('--log_every', default=2, type=int)
+    parser.add_argument('--log_every', default=1, type=int)
     parser.add_argument('--eval_steps', default=10_000, type=int)
     parser.add_argument('--num_eval_episodes', default=10, type=int)
     parser.add_argument('--work_dir', default='.', type=str)
@@ -86,7 +86,7 @@ def parse_args():
     parser.add_argument('--save_wandb', default=False, action='store_true')
 
     parser.add_argument('--save_model', default=True, action='store_true')
-    parser.add_argument('--save_model_freq', default=500_000, type=int)
+    parser.add_argument('--save_model_freq', default=1_000_000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
