@@ -1,5 +1,7 @@
+import os
 import sys
 import jax
+import flax
 import numpy as np
 import jax.numpy as jnp
 import multiprocessing as mp
@@ -51,12 +53,14 @@ def eval(args, log_dir, eval_queue, num_eval_episodes):
                                       args['mode'],
                                       jnp.float32)
     
+    best_return = -1e8
+    best_actor_params_path = os.path.join(log_dir, 'best_actor_params.pkl') 
     params = None
     while True:
         data = eval_queue.get()
         if isinstance(data, str):
             if data == 'close':
-                logger.close() 
+                logger.close()
                 sys.exit()
         else:
             params = data
@@ -64,6 +68,8 @@ def eval(args, log_dir, eval_queue, num_eval_episodes):
         
         epi = 0
         state = env.reset()
+        
+        sum_ret = 0
         while epi < num_eval_episodes: 
             rng, action = sample_actions(rng, 
                                          actor.apply, 
@@ -76,11 +82,19 @@ def eval(args, log_dir, eval_queue, num_eval_episodes):
             state, reward, done, info = env.step(action)
             
             if done or 'truncated' in info:
+                sum_ret += info['return']
                 state = env.reset()
                 info['tag'] = 'eval'
                 info['dump'] = True
                 info['eval_step'] = step 
                 logger.push(info)
                 epi += 1
+        
+        if sum_ret >= best_return:
+            best_return = sum_ret
+            if os.path.exists(best_actor_params_path):
+                os.remove(best_actor_params_path)
+            with open(best_actor_params_path, 'wb') as f: 
+                f.write(flax.serialization.to_bytes(params))        
                 
         logger.plot()

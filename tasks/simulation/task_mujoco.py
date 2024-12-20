@@ -86,9 +86,10 @@ def parse_args():
                         action='store_true')
     parser.add_argument('--xtick', default=10_000, type=int)
     parser.add_argument('--save_wandb', default=False, action='store_true')
-
+    
     parser.add_argument('--save_model', default=False, action='store_true')
     parser.add_argument('--save_model_freq', default=1_000_000, type=int)
+    parser.add_argument('--load_best_model', default=False)
     parser.add_argument('--load_model', default=-1, type=int)
     parser.add_argument('--start_step', default=0, type=int)
     parser.add_argument('--start_episode', default=0, type=int)
