@@ -30,7 +30,7 @@ config = {
     
     'latent_dim': 64,
 
-    'mlp': [256, 256],
+    'mlp': [1024, 1024],
 }
 
 def parse_args():
@@ -41,7 +41,7 @@ def parse_args():
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--env_name', default='Hopper-v4', type=str)
-    parser.add_argument('--task_name', default='MLP256', type=str)
+    parser.add_argument('--task_name', default='MLP1024', type=str)
     parser.add_argument('--image_height', default=96, type=int)     # Mode: img, img_prop
     parser.add_argument('--image_width', default=96, type=int)      # Mode: img, img_prop     
     parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
@@ -54,7 +54,7 @@ def parse_args():
     parser.add_argument('--env_steps', default=1_000_000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
-    parser.add_argument('--global_norm', default=5.0, type=float)
+    parser.add_argument('--global_norm', default=1.0, type=float)
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
@@ -190,7 +190,7 @@ def main(seed=-1):
 
     while env.total_steps < args.env_steps:
         t1 = time.time()
-        if env.total_steps < args.init_steps + 100:
+        if env.total_steps < args.init_steps:
             action = env.action_space.sample()
         else:
             action = agent.sample_actions(state)

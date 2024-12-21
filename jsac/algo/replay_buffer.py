@@ -324,13 +324,16 @@ class AsyncSMReplayBuffer(ReplayBuffer):
     
     def _recv_obs_sp(self):
         while True:
-            observation = self._obs_queue.get()
-            if isinstance(observation, str):
-                if observation == CLOSE:
-                    return
-                if observation == START:
-                    self._start_batch = True
-                    continue
+            try:
+                observation = self._obs_queue.get()
+                if isinstance(observation, str):
+                    if observation == CLOSE:
+                        return
+                    if observation == START:
+                        self._start_batch = True
+                        continue
+            except:
+                break
 
             with self._lock:
                 self.add(*observation)
