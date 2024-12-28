@@ -97,6 +97,20 @@ def save_eval_learning_curve(fname,
     plt.savefig(fname)
     plt.close()
 
+def get_episode_and_steps_from_log(path):
+    path = os.path.join(path, 'train.log')
+    assert os.path.isfile(path), 'Log file (train.log) does not exist. Aborting...'
+    episode, step = 0, 0
+    with open(path, 'r') as fl:
+        while True:
+            line = fl.readline()
+            if not line:
+                break
+            dc = eval(line)
+            episode = int(dc['episode'])
+            step = int(dc['step'])
+    return episode + 1, step 
+
 
 ## SRC: https://github.com/kindredresearch/SenseAct/blob/master/senseact/utils.py
 

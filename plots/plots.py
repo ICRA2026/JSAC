@@ -1,13 +1,75 @@
 import seaborn as sns
 import matplotlib.pyplot as plt 
 import pandas as pd  
-from read_files import read_log_file, read_log_file_2, read_eval_log_file
-from read_files import read_txt_file, read_txt_file_2
+import os
+import cv2
+import numpy as np
+from read_files import read_log_file, read_csv_file, get_total_run_time
 
 print(pd.__version__)
 
-def avg_graph(file_paths, plot_intervals, colors, labels, file_types, seeds, ylim, title, maxlen):
-    sns.set_theme(rc={'figure.figsize':(10, 7)})
+
+def combine_images(folder_path, output_image_name, gap_size=40):
+    image_files = sorted([
+        img for img in os.listdir(folder_path) 
+        if img.endswith('.png')
+    ])
+    images = [
+        cv2.imread(os.path.join(folder_path, img)) 
+        for img in image_files
+    ]
+    top = images[:3]
+    bottom = images[3:]
+    
+    max_top = max(img.shape[0] for img in top)
+    max_bottom = max(img.shape[0] for img in bottom)
+    
+    def pad(img, max_h):
+        if img.shape[0] < max_h:
+            pad_height = max_h - img.shape[0]
+            padding = 255 * np.ones(
+                (pad_height, img.shape[1], 3), 
+                dtype=img.dtype
+            )
+            return np.vstack((img, padding))
+        return img
+    
+    top_padded = [pad(img, max_top) for img in top]
+    bottom_padded = [pad(img, max_bottom) for img in bottom]
+    
+    gap = 255 * np.ones((max_top, gap_size, 3), dtype=images[0].dtype)
+    top_row = top_padded[0]
+    for img in top_padded[1:]:
+        top_row = np.hstack([top_row, gap, img])
+    
+    gap_bottom = 255 * np.ones((max_bottom, gap_size, 3), dtype=images[0].dtype)
+    bottom_row = bottom_padded[0]
+    for img in bottom_padded[1:]:
+        bottom_row = np.hstack([bottom_row, gap_bottom, img])
+    
+    pad_width = (top_row.shape[1] - bottom_row.shape[1]) // 2
+    if pad_width > 0:
+        padding = 255 * np.ones(
+            (max_bottom, pad_width, 3), 
+            dtype=images[0].dtype
+        )
+        bottom_row = np.hstack([padding, bottom_row, padding])
+    
+    vertical_gap = 255 * np.ones((gap_size, top_row.shape[1], 3), dtype=images[0].dtype)
+    combined = np.vstack([top_row, vertical_gap, bottom_row])
+    
+    output_path = os.path.join(folder_path, output_image_name)
+    cv2.imwrite(output_path, combined)
+
+def avg_graph(file_paths, colors, labels, file_types, seeds, ylim, title, maxlen, output_path, mlts, x_axis_name='steps', remove_ylabel=False):
+    sns.set_theme(rc={
+        'figure.figsize': (12, 12),
+        'axes.labelsize': 28, 
+        'axes.titlesize': 34,     
+        'xtick.labelsize': 20, 
+        'ytick.labelsize': 24, 
+        'legend.fontsize': 30 
+    })
     sns.set_style("whitegrid")
     
     num_tasks = len(file_paths)
@@ -22,102 +84,229 @@ def avg_graph(file_paths, plot_intervals, colors, labels, file_types, seeds, yli
             eval_steps = None
             try:
                 if file_types[itr] == 'log':
-                    path = f'{base_path}/seed_{seed}/train.log'
-                    epi_steps, returns = read_log_file(path)
-                elif file_types[itr] == 'log2':
-                    path = f'{base_path}/seed={seed}/train.log'
-                    epi_steps, returns = read_log_file_2(path)
-                elif file_types[itr] == 'eval':
                     path = f'{base_path}/seed_{seed}/eval.log'
-                    eval_steps, returns = read_eval_log_file(path)
-                elif file_types[itr] == 'txt':
-                    path = f'{base_path}/seed_{seed}/return.txt'
-                    epi_steps, returns = read_txt_file(path)
-                elif file_types[itr] == 'txt2':
-                    path = f'{base_path}/{seed}.txt'
-                    epi_steps, returns = read_txt_file_2(path)
+                    eval_steps, returns = read_log_file(path)
+                elif file_types[itr] == 'csv':
+                    path = f'{base_path}/seed_{seed}/eval_log.csv'
+                    eval_steps, returns = read_csv_file(path)
             except:
                 print(f'\tSeed {seed}, error reading file.')
                 continue
+ 
+            curr_step = eval_steps[0]
+            rets = [] 
+            for (i, step) in enumerate(eval_steps):
+                if step != curr_step:
+                    if len(rets) > 0:
+                        comb_data.append([curr_step * mlts[itr], sum(rets)/len(rets), labels[itr]]) 
+                        rets = []
+                    curr_step = step
 
-            if eval_steps: 
-                end_step = plot_intervals[itr]
-                rets = [] 
-                for (i, step) in enumerate(eval_steps):
-                    if step > end_step:
-                        if len(rets) > 0:
-                            comb_data.append([end_step, sum(rets)/len(rets), labels[itr]]) 
-                            rets = []
-                        end_step += plot_intervals[itr]
+                ret = returns[i]  
+                rets.append(ret) 
 
-                    ret = returns[i]  
-                    rets.append(ret) 
-                    
-                if len(rets) > 0:  
-                    comb_data.append([end_step, sum(rets)/len(rets), labels[itr]]) 
-            else:
-                steps = 0
-                end_step = plot_intervals[itr]
-                rets = []
+                if curr_step == maxlen:
+                    break
                 
-                for (i, epi_s) in enumerate(epi_steps): 
-                    if steps + epi_s > end_step:
-                        if len(rets) > 0:
-                            comb_data.append([end_step, sum(rets)/len(rets), labels[itr]]) 
-                            rets = []
-                        end_step += plot_intervals[itr]
-
-                    steps += epi_s
-                    ret = returns[i]  
-                    rets.append(ret)
-                    
-                if len(rets) > 0:  
-                    comb_data.append([end_step, sum(rets)/len(rets), labels[itr]])
+            if len(rets) > 0:  
+                comb_data.append([curr_step * mlts[itr], sum(rets)/len(rets), labels[itr]]) 
             
-            if end_step != maxlen:
-                print(f'\tSeed {seed} did not reach {maxlen}. Reached {end_step}.')
+            if curr_step != maxlen:
+                print(f'\tSeed {seed} did not reach {maxlen}. Reached {curr_step}.')
                 
-                
-            
-        df = pd.DataFrame(comb_data, columns=["Step", "Return", "Task"]) 
-        ax1 = sns.lineplot(x="Step", y='Return', data=df,
+        df = pd.DataFrame(comb_data, columns=[x_axis_name, "return", "Task"]) 
+        ax1 = sns.lineplot(x=x_axis_name, y='return', data=df,
                    color=sns.color_palette(colors)[itr], 
                    linewidth=2.0, label=labels[itr]) # , errorbar=None)
-         
     
-    # ax1.legend(loc='lower right')
-    ax1.legend([], [], frameon=False)
+    ax1.legend(loc='lower right', framealpha=0.9, facecolor='white') 
+    if remove_ylabel:
+        ax1.set_ylabel("")
+        ax1.set_xlabel("")
+        ax1.get_legend().remove()
+
     if ylim:
         plt.ylim(*ylim)
     plt.title(title)
-    plt.savefig(f'imgs/{title}.png')
+    plt.tight_layout()
+    plt.savefig(output_path)
     plt.close()
 
 
-if __name__ == "__main__": 
-    file_paths = ["../results/HalfCheetah-v4_prop_sync", 
-                  "../results/Hopper-v4_prop_sync", 
-                  "../results/Ant-v4_prop_sync", 
-                  "../results/Humanoid-v4_prop_sync",
-                  "../results/Walker2d-v4_prop_sync",
-                  "../results/cheetah_img_sync"]
+def plot_steps():
+    prop_env_names = ['Ant-v4', 'HalfCheetah-v4', 'Hopper-v4', 'Humanoid-v4', 'Walker2d-v4']
+    img_env_names = ['ball_in_cup', 'cartpole_swingup', 'cheetah', 'finger_spin', 'walker_walk']
+    img_env_titles = ['ball_in_cup_catch', 'cartpole_swingup', 'cheetah_run', 'finger_spin', 'walker_walk']
 
-    plot_intervals = [10000] * 6
-    colors = 'bright'
-    labels = ["HalfCheetah-v4", 
-              "Hopper-v4", 
-              "Ant-v4",
-              "Humanoid-v4",
-              "Walker2d-v4", 
-              "cheetah_img"] 
+    jsac_results_base_path = 'results/results_jsac/results'
+    sb3_results_base_path = 'results/results_sb3/results' 
+
+    ## PLOT PROP
+    ylabel = False
+
+    for env_name in prop_env_names:
+        title = env_name 
+        jsac_env_res_folder = env_name + '_prop'
+        jsac_path = os.path.join(jsac_results_base_path, jsac_env_res_folder)
+        sb3_path = os.path.join(sb3_results_base_path, env_name)
+        path = [jsac_path, sb3_path]
+        output_path = f'results/plot_imgs/prop/{env_name}.png'
+
+        avg_graph(
+            file_paths=path,
+            colors=sns.color_palette('bright'), 
+            labels=[f'jsac', 'sb3'], 
+            file_types=['log', 'csv'], 
+            seeds=range(15), 
+            ylim=None, 
+            title=title + ' - Eval', 
+            maxlen=1_000_000,
+            output_path=output_path,
+            mlts=[1, 1],
+            remove_ylabel=ylabel)
+        
+        ylabel = True
+        
+    combine_images('results/plot_imgs/prop/', 'combined.png')
     
-    file_types =['eval'] * 6
-    seeds = range(30)
+    ## PLOT IMGS
+    ylabel = False
     
-    maxlens = [1000000] * 5 + [500000]
-    ylim = None
+    for idx, env_name in enumerate(img_env_names):
+        title = img_env_titles[idx] 
+        sync_folder = env_name + '_img_sync'
+        async_folder = env_name + '_img_async'
+        jsac_sync_path = os.path.join(jsac_results_base_path, sync_folder)
+        jsac_async_path = os.path.join(jsac_results_base_path, async_folder)
+
+        path = [jsac_sync_path, jsac_async_path]
+        output_path = f'results/plot_imgs/img/{env_name}.png'
+
+        maxlen = 500_000
+        if env_name in ['ball_in_cup', 'cartpole_swingup']:
+            maxlen = 250_000
+
+        avg_graph(
+            file_paths=path,
+            colors=sns.color_palette('bright'), 
+            labels=[f'jsac_sync', 'jsac_async'], 
+            file_types=['log', 'log'], 
+            seeds=range(15), 
+            ylim=None, 
+            title=title + ' - eval', 
+            maxlen=maxlen,
+            output_path=output_path,
+            mlts=[1, 1],
+            remove_ylabel=ylabel)
+        
+        ylabel = True
+        
+    combine_images('results/plot_imgs/img/', 'combined.png')
+
+
+def get_timings(base_path, seeds, file_type):
+    times = []
+    for seed in seeds:
+        if file_type == 'log':
+            path = f'{base_path}/seed_{seed}/train.log'
+            total_time = get_total_run_time(path, file_type)
+        elif file_type == 'csv':
+            path = f'{base_path}/seed_{seed}/training_log.csv'
+            total_time = get_total_run_time(path, file_type)
+        times.append(total_time)
+
+    times = sorted(times)[3:-3]
+    return sum(times) / len(times)
+
+
+def plot_times():
+    prop_env_names = ['Ant-v4', 'HalfCheetah-v4', 'Hopper-v4', 'Humanoid-v4', 'Walker2d-v4']
+    img_env_names = ['ball_in_cup', 'cartpole_swingup', 'cheetah', 'finger_spin', 'walker_walk']
+    img_env_titles = ['ball_in_cup_catch', 'cartpole_swingup', 'cheetah_run', 'finger_spin', 'walker_walk']
+
+    jsac_results_base_path = 'results/results_jsac/results'
+    sb3_results_base_path = 'results/results_sb3/results' 
+
+    ## PLOT PROP
+    ylabel = False
+
+    for env_name in prop_env_names:
+        title = env_name 
+        jsac_env_res_folder = env_name + '_prop'
+        jsac_path = os.path.join(jsac_results_base_path, jsac_env_res_folder)
+        sb3_path = os.path.join(sb3_results_base_path, env_name)
+        path = [jsac_path, sb3_path]
+        output_path = f'results/plot_imgs/times/prop/{env_name}.png'
+
+        jsac_time = get_timings(jsac_path, range(15), 'log')
+        jsac_mlt = (jsac_time / (60 * 1_000_000))
+
+        sb3_time = get_timings(sb3_path, range(15), 'csv')
+        sb3_mlt = (sb3_time / (60 * 1_000_000))
+
+        mlts = [jsac_mlt, sb3_mlt]
+
+        avg_graph(
+            file_paths=path,
+            colors=sns.color_palette('bright'), 
+            labels=[f'jsac', 'sb3'], 
+            file_types=['log', 'csv'], 
+            seeds=range(15), 
+            ylim=None, 
+            title=title + ' - Eval', 
+            maxlen=1_000_000,
+            output_path=output_path,
+            mlts=mlts,
+            x_axis_name='mins',
+            remove_ylabel=ylabel)
+        
+        ylabel = True
     
-    for i in range(len(labels)):
-        title = labels[i]
-        maxlen = maxlens[i]
-        avg_graph(file_paths[i:i+1], plot_intervals[i:i+1], colors, labels[i:i+1], file_types[i:i+1], seeds, ylim, title, maxlen)
+    combine_images('results/plot_imgs/times/prop/', 'combined.png')
+
+    ## PLOT IMGS
+    ylabel = False
+
+    for idx, env_name in enumerate(img_env_names):
+        title = img_env_titles[idx] 
+        sync_folder = env_name + '_img_sync'
+        async_folder = env_name + '_img_async'
+        jsac_sync_path = os.path.join(jsac_results_base_path, sync_folder)
+        jsac_async_path = os.path.join(jsac_results_base_path, async_folder)
+
+        path = [jsac_sync_path, jsac_async_path]
+        output_path = f'results/plot_imgs/times/img/{env_name}.png'
+
+        sync_time = get_timings(jsac_sync_path, range(15), 'log')
+        sync_mlt = (sync_time / (60 * 500_000))
+
+        async_time = get_timings(jsac_async_path, range(15), 'log')
+        async_mlt = (async_time / (60 * 500_000))
+
+        mlts = [sync_mlt, async_mlt]
+
+        maxlen = 500_000
+        if env_name in ['ball_in_cup', 'cartpole_swingup']:
+            maxlen = 250_000
+
+        avg_graph(
+            file_paths=path,
+            colors=sns.color_palette('bright'), 
+            labels=[f'jsac_sync', 'jsac_async'], 
+            file_types=['log', 'log'], 
+            seeds=range(15), 
+            ylim=None, 
+            title=title + ' - eval', 
+            maxlen=maxlen,
+            output_path=output_path,
+            mlts=mlts,
+            x_axis_name='mins')
+        
+        ylabel = True
+        
+    combine_images('results/plot_imgs/times/img/', 'combined.png')
+
+
+if __name__ == "__main__": 
+    plot_steps()
+    plot_times()

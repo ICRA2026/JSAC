@@ -242,23 +242,32 @@ class ReplayBuffer():
         self._im_idx = data['im_idx']
         self._last_im_idx = data['last_im_idx']
 
+        total_size = 0
+
         if not self._ignore_image:
             self._images = np.load(os.path.join(self._load_path, "images.npy"))
             self._images_idxs = np.load(os.path.join(self._load_path, "images_idxs.npy"))
             self._next_images_idxs = np.load(os.path.join(self._load_path, "next_images_idxs.npy"))
+            total_size += self._images.nbytes + self._images_idxs.nbytes + \
+                    self._next_images_idxs.nbytes
 
         if not self._ignore_propri:
             self._propris = np.load(os.path.join(self._load_path,
                                                  "propris.npy"))
             self._next_propris = np.load(os.path.join(self._load_path,
                                                       "next_propris.npy"))
+            total_size += self._propris.nbytes + self._next_propris.nbytes
 
         self._actions = np.load(os.path.join(self._load_path, "actions.npy"))
         self._rewards = np.load(os.path.join(self._load_path, "rewards.npy"))
         self._masks = np.load(os.path.join(self._load_path, "masks.npy"))
 
+        total_size += self._actions.nbytes + self._rewards.nbytes + self._masks.nbytes
+
         print("Loaded the buffer from: {}".format(self._load_path), end=' ')
         print("Took: {:.3f}s".format(time.time() - tic))
+        
+        return total_size
         
     def close(self):
         pass

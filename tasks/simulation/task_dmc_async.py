@@ -40,8 +40,7 @@ def parse_args():
     parser.add_argument('--mode', default='img', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-    parser.add_argument('--env_name', default='cheetah', type=str)
-    parser.add_argument('--task_name', default='', type=str)
+    parser.add_argument('--env_name', default='cheetah', type=str) 
     parser.add_argument('--image_height', default=96, type=int)     # Mode: img, img_prop
     parser.add_argument('--image_width', default=96, type=int)      # Mode: img, img_prop     
     parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
@@ -113,7 +112,7 @@ def main(seed=-1):
         assert args.mode != MODE.PROP, "Async mode is not supported for proprioception only tasks." 
 
     sync_mode = 'sync' if args.sync_mode else 'async'
-    args.name = f'{args.env_name}_{args.mode}_{sync_mode}_{args.task_name}'
+    args.name = f'{args.env_name}_{args.mode}_{sync_mode}'
 
     args.work_dir += f'/results/{args.name}/seed_{args.seed}/'
 

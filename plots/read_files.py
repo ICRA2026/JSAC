@@ -1,3 +1,5 @@
+import csv
+
 def read_log_file(path):
     with open(path, 'r') as fl:
         epi_steps=[]
@@ -8,56 +10,36 @@ def read_log_file(path):
                 break
             dc = eval(line)
             rw = dc['return']
-            stp = dc['episode_steps']
+            stp = dc['eval_step']
             epi_steps.append(int(stp))
             returns.append(float(rw))
     return epi_steps, returns
 
-def read_eval_log_file(path):
-    with open(path, 'r') as fl:
-        eval_steps=[]
-        returns=[]
-        while True:
-            line = fl.readline()
-            if not line:
-                break
-            dc = eval(line)
-            rw = dc['return']
-            stp = dc['eval_step']
-            eval_steps.append(int(stp))
-            returns.append(float(rw))
-    return eval_steps, returns
+def read_csv_file(path):
+    total_steps = []
+    mean_returns = []
+    
+    with open(path, 'r') as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            total_steps.append(int(row['total_steps']))
+            mean_returns.append(float(row['mean_return']))
+    
+    return total_steps, mean_returns
 
-def read_log_file_2(path):
-    with open(path, 'r') as fl:
-        epi_steps=[]
-        returns=[]
-        prv_stp = 0
-        while True:
-            line = fl.readline()
-            if not line:
-                break
-            dc = eval(line)
-            rw = dc['episode_reward']
-            stp = dc['step']
-            epi_steps.append(int(stp-prv_stp))
-            returns.append(float(rw))
-            prv_stp = stp
-    return epi_steps, returns
-
-def read_txt_file(path):
-    with open(path, 'r') as fl:
-        epi_steps = [int(float(step)) for step in fl.readline().split()]
-        returns = [int(float(ret)) for ret in fl.readline().split()]
-    return epi_steps, returns
-
-def read_txt_file_2(path):
-    returns = []
-    epi_steps = []
-    with open(path, 'r') as fl:
-        lines = fl.readlines()
-        for line in lines:
-            spl = line.split()
-            returns.append(float(spl[0]))
-            epi_steps.append(int(spl[1]))
-    return epi_steps, returns
+def get_total_run_time(path, type):
+    if type == 'log':
+        with open(path, 'r') as fl: 
+            while True:
+                line = fl.readline()
+                if not line:
+                    break
+                dc = eval(line)
+        total_time = float(dc['elapsed_time'])
+    elif type == 'csv':
+        with open(path, 'r') as csv_file:
+            reader = csv.DictReader(csv_file)
+            for row in reader:
+                line = row
+        total_time = float(line['elapsed_time'])
+    return total_time

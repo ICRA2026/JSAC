@@ -109,13 +109,6 @@ class BaseAgent:
 
         if self._load_model > 0:
             self._load_model_fnc()
-            
-        if self._load_best_model:
-            best_actor_params_path = os.path.join(self._work_dir, 'best_actor_params.pkl')
-            if os.path.exists(best_actor_params_path):
-                with open(best_actor_params_path, 'rb') as f: 
-                    params_loaded = flax.serialization.from_bytes(self._actor.params, f.read())
-                    self._actor = self._actor.replace(params=params_loaded)
 
     def add(self, state, action, reward, next_state, mask, first_step):
         image, proprioception = self._unpack(state)

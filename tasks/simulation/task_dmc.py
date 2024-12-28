@@ -16,7 +16,7 @@ from jsac.helpers.logger import Logger
 from jsac.helpers.eval import start_eval_process
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 from jsac.envs.dmc_visual_env.dmc_env import DMCVisualEnv
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv, get_episode_and_steps_from_log
 
 
 config = {
@@ -41,18 +41,17 @@ def parse_args():
                         help="Modes in ['img', 'img_prop', 'prop']")
     
     parser.add_argument('--env_name', default='cheetah', type=str)
-    parser.add_argument('--task_name', default='', type=str)
     parser.add_argument('--image_height', default=96, type=int)     # Mode: img, img_prop
     parser.add_argument('--image_width', default=96, type=int)      # Mode: img, img_prop     
     parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
     parser.add_argument('--action_repeat', default=2, type=int)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=500_000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=100_000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=5_000, type=int)
-    parser.add_argument('--env_steps', default=500_000, type=int)
+    parser.add_argument('--env_steps', default=30_000, type=int)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--global_norm', default=1.0, type=float)
@@ -87,16 +86,13 @@ def parse_args():
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
     parser.add_argument('--xtick', default=10_000, type=int)
-    parser.add_argument('--save_wandb', default=False, action='store_true')
+    parser.add_argument('--save_wandb', default=True, action='store_true')
 
-    parser.add_argument('--save_model', default=False, action='store_true')
+    parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--save_model_freq', default=500_000, type=int)
-    parser.add_argument('--load_best_model', default=False)
     parser.add_argument('--load_model', default=-1, type=int)
-    parser.add_argument('--start_step', default=0, type=int)
-    parser.add_argument('--start_episode', default=0, type=int)
 
-    parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
+    parser.add_argument('--buffer_save_path', default='./buffers/', type=str) # ./buffers/
     parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 
     args = parser.parse_args()
@@ -111,9 +107,11 @@ def main(seed=-1):
 
     if not args.sync_mode:
         assert args.mode != MODE.PROP, "Async mode is not supported for proprioception only tasks." 
+    
+    args.start_episode, args.start_step = 0, 0
 
     sync_mode = 'sync' if args.sync_mode else 'async'
-    args.name = f'{args.env_name}_{args.mode}_{sync_mode}_{args.task_name}'
+    args.name = f'{args.env_name}_{args.mode}_{sync_mode}'
 
     args.work_dir += f'/results/{args.name}/seed_{args.seed}/'
 
@@ -128,7 +126,7 @@ def main(seed=-1):
             shutil.rmtree(args.work_dir)
             print('Previous work dir removed.')
         elif inp == '':
-            pass
+            args.start_episode, args.start_step = get_episode_and_steps_from_log(args.work_dir)
         else:
             exit(0)
 

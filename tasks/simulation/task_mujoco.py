@@ -16,7 +16,7 @@ from jsac.helpers.logger import Logger
 from jsac.helpers.eval import start_eval_process
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 from jsac.envs.mujoco_visual_env.mujoco_visual_env import MujocoVisualEnv
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv, get_episode_and_steps_from_log
 
 
 config = {
@@ -91,8 +91,6 @@ def parse_args():
     parser.add_argument('--save_model_freq', default=1_000_000, type=int)
     parser.add_argument('--load_best_model', default=False)
     parser.add_argument('--load_model', default=-1, type=int)
-    parser.add_argument('--start_step', default=0, type=int)
-    parser.add_argument('--start_episode', default=0, type=int)
 
     parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
     parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
@@ -109,6 +107,8 @@ def main(seed=-1):
 
     if not args.sync_mode:
         assert args.mode != MODE.PROP, "Async mode is not supported for proprioception only tasks." 
+    
+    args.start_episode, args.start_step = 0, 0
 
     sync_mode = 'sync' if args.sync_mode else 'async'
     args.name = f'{args.env_name}_{args.mode}_{sync_mode}_{args.task_name}'
@@ -126,7 +126,7 @@ def main(seed=-1):
             shutil.rmtree(args.work_dir)
             print('Previous work dir removed.')
         elif inp == '':
-            pass
+            args.start_episode, args.start_step = get_episode_and_steps_from_log(args.work_dir)
         else:
             exit(0)
 

@@ -42,7 +42,14 @@ def eval(args, log_dir, eval_queue, num_eval_episodes):
                            args['action_repeat'])
     env = WrappedEnv(env)
     
-    logger = Logger(log_dir, eval=True) 
+    if args['save_wandb']:
+        wandb_project_name = args['name']
+        wandb_run_name= 'seed_' + str(args['seed']) + '_eval'
+        logger = Logger(log_dir, eval=True, use_wandb=True, 
+                        wandb_project_name=wandb_project_name, 
+                        wandb_run_name=wandb_run_name) 
+    else:
+        logger = Logger(log_dir, eval=True) 
     rng = jax.random.PRNGKey(0)
     rng, actor = init_inference_actor(rng, 
                                       args['image_shape'],

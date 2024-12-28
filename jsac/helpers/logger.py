@@ -32,6 +32,21 @@ FORMAT_CONFIG = {
     }
 }
 
+def get_wandb_id_from_config(path):
+    config_file_path = os.path.join(path, 'config_0.txt')
+    wandb_id_in_config = None
+    if os.path.isfile(config_file_path):
+        with open(config_file_path, 'r') as cf:
+            for line in cf:
+                if line.startswith('wandb_id'):
+                    wandb_id_in_config = line
+                    break
+    if wandb_id_in_config is not None:
+        wandb_id_in_config = wandb_id_in_config.split('->')[-1].strip()
+        if len(wandb_id_in_config) > 0:
+            return wandb_id_in_config
+    return None
+
 
 class AverageMeter(object):
     def __init__(self):
@@ -190,13 +205,20 @@ class Logger(object):
             formating=FORMAT_CONFIG[self._config]['eval']
         )
 
+        wandb_id = None
         if self._use_wandb:
             self._use_wandb = True
-            id = f'{self._wandb_project_name}-{self._wandb_run_name}'
+            if self._wandb_resume or self._eval:
+                wandb_id = get_wandb_id_from_config(self._log_dir)
+            if wandb_id is None:
+                time_str = str(int(time.time() * 100))
+                wandb_id = f'{self._wandb_project_name}-{self._wandb_run_name}-{time_str}'
+            if self._eval:
+                wandb_id = f'eval-{wandb_id}'
             wandb.init(
                 project=self._wandb_project_name,
                 name=self._wandb_run_name,
-                id=id,
+                id=wandb_id,
                 config=self._args,
                 resume=self._wandb_resume
             )
@@ -205,7 +227,7 @@ class Logger(object):
 
         self._returns=[]
         self._episode_steps=[]
-        self._eval_step=[]
+        self._eval_steps=[]
 
         if not self._eval:
             log_path = os.path.join(self._log_dir, 'train.log')
@@ -223,6 +245,16 @@ class Logger(object):
                 for key, value in self._args.items():
                     cfl.write(f'{key} -> {value}')
                     cfl.write('\n\n')
+                if wandb_id is not None:
+                    cfl.write(f'wandb_id -> {wandb_id}')
+        else:
+            log_path = os.path.join(self._log_dir, 'eval.log')
+            if os.path.exists(log_path):
+                with open(log_path, 'r') as ret_file:
+                    for line in ret_file.readlines():
+                        dict = eval(line)
+                        self._returns.append(dict['return']) 
+                        self._eval_steps.append(dict['eval_step'])
 
         plot_name = 'eval_learning_curve' if self._eval else 'learning_curve'
         self._plot_path = os.path.join(self._log_dir, f'{plot_name}.png') 
@@ -254,7 +286,7 @@ class Logger(object):
                 elif k == 'episode_steps':
                     self._episode_steps.append(v)
                 elif k == 'eval_step':
-                    self._eval_step.append(v)
+                    self._eval_steps.append(v)
 
                 self._log(f'{tag}/{k}', v, step)
 
@@ -284,7 +316,7 @@ class Logger(object):
         if self._eval:
             save_eval_learning_curve(self._plot_path, 
                                      self._returns, 
-                                     self._eval_step)
+                                     self._eval_steps)
         else:
             save_learning_curve(self._plot_path, 
                                 self._returns, 
