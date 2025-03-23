@@ -43,6 +43,11 @@ class BaseAgent:
             self._sync_queue = sync_queue
         else:
             self._sync_queue = None
+
+        if 'apply_weight_clip' not in args:
+            self._apply_weight_clip = False
+        else:
+            print('Weight Clipping:', self._apply_weight_clip)
         
         self._dtype = jnp.float32
         
@@ -162,7 +167,8 @@ class BaseAgent:
             self._target_entropy,
             self._update_step % self._actor_update_freq == 0,
             self._update_step % self._critic_target_update_freq == 0,
-            self._num_critic_updates)
+            self._num_critic_updates,
+            self._apply_weight_clip)
 
         jax.block_until_ready(actor.params)
         self._actor = actor

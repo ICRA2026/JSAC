@@ -9,6 +9,7 @@ import time
 import logging
 import numpy as np
 import random
+import threading
 import jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_config as create2_config
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env import utils as utils
 
@@ -25,6 +26,9 @@ from jsac.envs.create2_orin_visual_reacher.depstech_camera_communicator import C
 OB_TYPE_1 = "MASK"
 OB_TYPE_2 = "OH"
 OB_TYPE_3 = "MASK_OH"
+
+def print_with_delay(text, delay=0.2):
+    threading.Timer(delay, print, args=(text,)).start()
 
 class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     """Create2 environment for training it drive forward.
@@ -70,7 +74,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         else:
             self._hsv_mask = ((134, 71, 193), (191, 219, 255))   ## PINK
         self._min_target_size = min_target_size
-        self._min_battery = 850
+        self._min_battery = 1000
         self._max_battery = 1600
         self._dense_reward = dense_reward
 
@@ -458,7 +462,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         print("Reset completed.")
         if self._multi_target:
-            print('Target:', self._current_target)
+            if self._current_target == 0:
+                print_with_delay('Target: Pink')
+            else:
+                print_with_delay('Target: Green') 
 
     def _check_done(self, env_done):
         """The required _check_done_ interface.

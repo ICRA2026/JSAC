@@ -43,6 +43,7 @@ def parse_args():
     parser.add_argument('--image_history', default=2, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
+    parser.add_argument('--apply_weight_clip', default=True, action='store_true')
 
     parser.add_argument('--camera_id', default=0, type=int)
     parser.add_argument('--episode_length_time', default=12.0, type=float)
@@ -53,17 +54,16 @@ def parse_args():
     parser.add_argument('--pause_after_reset', default=0, type=float)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=100_000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=90_000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=5_000, type=int)
-    parser.add_argument('--env_steps', default=100_000, type=int)
+    parser.add_argument('--env_steps', default=90_000, type=int)
     parser.add_argument('--task_timeout_mins', default=-1, type=int)
-    parser.add_argument('--min_charge', default=860, type=int)
+    parser.add_argument('--min_charge', default=1005, type=int)
     parser.add_argument('--batch_size', default=192, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--global_norm', default=1.0, type=float)
-    parser.add_argument('--apply_weight_clip', default=False, action='store_true')
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
@@ -203,9 +203,11 @@ def main(seed=-1):
     args.env_action_space = env.action_space
 
     if args.sync_mode:
+        sync_queue = None
         agent = SACRADAgent(vars(args))
     else:
-        agent = AsyncSACRADAgent(vars(args))
+        sync_queue = mp.Queue()
+        agent = AsyncSACRADAgent(vars(args), sync_queue)
 
     task_end_time = -1
     if args.task_timeout_mins > 0:
@@ -250,7 +252,7 @@ def main(seed=-1):
             if charge < args.min_charge:
                 update_paused = True
                 agent.pause_update()
-                
+
             if update_paused and env.total_steps >= args.init_steps \
                 and charge > args.min_charge:
                 agent.resume_update()
@@ -258,6 +260,9 @@ def main(seed=-1):
                 if pause_for_update:
                     time.sleep(40)  ## Pause for initial jit compilation of udpate fucntion
                     pause_for_update = False
+
+        if sync_queue and not update_paused:
+            sync_queue.put(1)
 
         if not update_paused and env.total_steps >= args.init_steps:
             update_infos = agent.update()

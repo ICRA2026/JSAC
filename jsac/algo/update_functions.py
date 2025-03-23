@@ -11,7 +11,8 @@ def critic_update(rng,
                   critic_target_params, 
                   temp, 
                   batch, 
-                  discount):
+                  discount,
+                  apply_weight_clip):
 
     rng, key_ac, key_tq = random.split(rng, 3)
     
@@ -58,7 +59,8 @@ def actor_update(rng,
                  actor, 
                  critic, 
                  temp, 
-                 batch):
+                 batch,
+                 apply_weight_clip):
     rng, key_ac = random.split(rng)
     
     # The actor's encoder parameters are not updated
@@ -134,7 +136,8 @@ def batched_random_crop(key, imgs, padding=4):
 
 @functools.partial(jax.jit, static_argnames=('update_actor',
                                              'update_target',
-                                             'num_critic_updates'))
+                                             'num_critic_updates',
+                                             'apply_weight_clip'))
 def update_jit(rng, 
                actor, 
                critic, 
@@ -146,7 +149,8 @@ def update_jit(rng,
                target_entropy, 
                update_actor, 
                update_target,
-               num_critic_updates):
+               num_critic_updates,
+               apply_weight_clip):
     
     rng, key1, key2 = random.split(rng, 3)
 
@@ -176,7 +180,8 @@ def update_jit(rng,
             critic_target_params, 
             temp, 
             m_batch, 
-            discount)
+            discount,
+            apply_weight_clip)
         
         if update_actor and i == num_critic_updates - 1:
             rng, actor, actor_info = actor_update(
@@ -184,7 +189,8 @@ def update_jit(rng,
                 actor, 
                 critic, 
                 temp,
-                m_batch)
+                m_batch,
+                apply_weight_clip)
 
             temp, alpha_info = temp_update(
                 temp, 
