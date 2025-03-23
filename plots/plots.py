@@ -78,7 +78,7 @@ def avg_graph(file_paths, colors, labels, file_types, seeds, ylim, title, maxlen
         comb_data = []
         base_path = file_paths[itr] 
         
-        print(labels[itr])
+        print('\t', labels[itr])
 
         for seed in seeds:
             eval_steps = None
@@ -111,7 +111,7 @@ def avg_graph(file_paths, colors, labels, file_types, seeds, ylim, title, maxlen
             if len(rets) > 0:  
                 comb_data.append([curr_step * mlts[itr], sum(rets)/len(rets), labels[itr]]) 
             
-            if curr_step != maxlen:
+            if abs(curr_step - maxlen) > 10:
                 print(f'\tSeed {seed} did not reach {maxlen}. Reached {curr_step}.')
                 
         df = pd.DataFrame(comb_data, columns=[x_axis_name, "return", "Task"]) 
@@ -138,14 +138,17 @@ def plot_steps():
     img_env_names = ['ball_in_cup', 'cartpole_swingup', 'cheetah', 'finger_spin', 'walker_walk']
     img_env_titles = ['ball_in_cup_catch', 'cartpole_swingup', 'cheetah_run', 'finger_spin', 'walker_walk']
 
-    jsac_results_base_path = 'results/results_jsac/results'
-    sb3_results_base_path = 'results/results_sb3/results' 
-    redq_results_base_path = 'results/results_reqd/results'
+    jsac_results_base_path = 'results/results_jsac'
+    sb3_results_base_path = 'results/results_sb3' 
+    redq_results_base_path = 'results/results_reqd'
 
     ## PLOT PROP
     ylabel = False
 
+    os.makedirs('all_plots/prop', exist_ok=True)
+
     for env_name in prop_env_names:
+        print('Steps - Prop, Env name:', env_name)
         title = env_name 
         jsac_env_res_folder = env_name + '_prop'
         jsac_path = os.path.join(jsac_results_base_path, jsac_env_res_folder)
@@ -153,7 +156,7 @@ def plot_steps():
         redq_path = os.path.join(redq_results_base_path, env_name)
 
         path = [jsac_path, sb3_path, redq_path]
-        output_path = f'results/plot_imgs/prop/{env_name}.png'
+        output_path = f'all_plots/prop/{env_name}.png'
 
         avg_graph(
             file_paths=path,
@@ -170,12 +173,16 @@ def plot_steps():
         
         ylabel = True
         
-    combine_images('results/plot_imgs/prop/', 'combined.png')
+    combine_images('all_plots/prop/', 'combined.png')
     
     ## PLOT IMGS
     ylabel = False
+
+    os.makedirs('all_plots/img', exist_ok=True)
     
     for idx, env_name in enumerate(img_env_names):
+        print('Steps - Img, Env name:', env_name)
+
         title = img_env_titles[idx] 
         sync_folder = env_name + '_img_sync'
         async_folder = env_name + '_img_async'
@@ -183,7 +190,7 @@ def plot_steps():
         jsac_async_path = os.path.join(jsac_results_base_path, async_folder)
 
         path = [jsac_sync_path, jsac_async_path]
-        output_path = f'results/plot_imgs/img/{env_name}.png'
+        output_path = f'all_plots/img/{env_name}.png'
 
         maxlen = 500_000
         if env_name in ['ball_in_cup', 'cartpole_swingup']:
@@ -204,7 +211,7 @@ def plot_steps():
         
         ylabel = True
         
-    combine_images('results/plot_imgs/img/', 'combined.png')
+    combine_images('all_plots/img/', 'combined.png')
 
 
 def get_timings(base_path, seeds, file_type):
@@ -227,19 +234,26 @@ def plot_times():
     img_env_names = ['ball_in_cup', 'cartpole_swingup', 'cheetah', 'finger_spin', 'walker_walk']
     img_env_titles = ['ball_in_cup_catch', 'cartpole_swingup', 'cheetah_run', 'finger_spin', 'walker_walk']
 
-    jsac_results_base_path = 'results/results_jsac/results'
-    sb3_results_base_path = 'results/results_sb3/results' 
+    jsac_results_base_path = 'results/results_jsac'
+    sb3_results_base_path = 'results/results_sb3' 
+    redq_results_base_path = 'results/results_reqd'
+
+    os.makedirs('all_plots/times/prop', exist_ok=True)
 
     ## PLOT PROP
     ylabel = False
 
     for env_name in prop_env_names:
+        print('Times - Prop, Env name:', env_name)
+
         title = env_name 
         jsac_env_res_folder = env_name + '_prop'
         jsac_path = os.path.join(jsac_results_base_path, jsac_env_res_folder)
         sb3_path = os.path.join(sb3_results_base_path, env_name)
-        path = [jsac_path, sb3_path]
-        output_path = f'results/plot_imgs/times/prop/{env_name}.png'
+        redq_path = os.path.join(redq_results_base_path, env_name)
+
+        path = [jsac_path, sb3_path, redq_path]
+        output_path = f'all_plots/times/prop/{env_name}.png'
 
         jsac_time = get_timings(jsac_path, range(15), 'log')
         jsac_mlt = (jsac_time / (60 * 1_000_000))
@@ -247,13 +261,16 @@ def plot_times():
         sb3_time = get_timings(sb3_path, range(15), 'csv')
         sb3_mlt = (sb3_time / (60 * 1_000_000))
 
-        mlts = [jsac_mlt, sb3_mlt]
+        redq_time = get_timings(redq_path, range(15), 'log')
+        redq_mlt = (redq_time / (60 * 1_000_000))
+
+        mlts = [jsac_mlt, sb3_mlt, redq_mlt]
 
         avg_graph(
             file_paths=path,
             colors=sns.color_palette('bright'), 
-            labels=[f'jsac', 'sb3'], 
-            file_types=['log', 'csv'], 
+            labels=[f'jsac', 'sb3', 'redq'], 
+            file_types=['log', 'csv', 'log'], 
             seeds=range(15), 
             ylim=None, 
             title=title + ' - Eval', 
@@ -265,12 +282,16 @@ def plot_times():
         
         ylabel = True
     
-    combine_images('results/plot_imgs/times/prop/', 'combined.png')
+    combine_images('all_plots/times/prop/', 'combined.png')
+
+    os.makedirs('all_plots/times/img', exist_ok=True)
 
     ## PLOT IMGS
     ylabel = False
 
     for idx, env_name in enumerate(img_env_names):
+        print('Times - Img, Env name:', env_name)
+
         title = img_env_titles[idx] 
         sync_folder = env_name + '_img_sync'
         async_folder = env_name + '_img_async'
@@ -278,7 +299,7 @@ def plot_times():
         jsac_async_path = os.path.join(jsac_results_base_path, async_folder)
 
         path = [jsac_sync_path, jsac_async_path]
-        output_path = f'results/plot_imgs/times/img/{env_name}.png'
+        output_path = f'all_plots/times/img/{env_name}.png'
 
         sync_time = get_timings(jsac_sync_path, range(15), 'log')
         sync_mlt = (sync_time / (60 * 500_000))
@@ -307,9 +328,9 @@ def plot_times():
         
         ylabel = True
         
-    combine_images('results/plot_imgs/times/img/', 'combined.png')
+    combine_images('all_plots/times/img/', 'combined.png')
 
 
 if __name__ == "__main__": 
     plot_steps()
-    # plot_times()
+    plot_times()

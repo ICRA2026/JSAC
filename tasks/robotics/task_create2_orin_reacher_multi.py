@@ -6,15 +6,15 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']='.10'
 # os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
-from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere
 from jsac.helpers.logger import Logger
 from jsac.envs.create2_orin_visual_reacher.env import Create2VisualReacherEnv
-from jsac.helpers.utils import WrappedEnv
+from jsac.helpers.utils import MODE, make_dir, set_seed_everywhere, WrappedEnv, get_episode_and_steps_from_log
 from jsac.algo.agent import SACRADAgent, AsyncSACRADAgent
 import time
 import argparse
 import shutil
 import multiprocessing as mp
+import numpy as np
 
 
 config = {
@@ -26,47 +26,49 @@ config = {
         [64, 64, 3, 1],
     ],
     
-    'latent_dim': 96,
+    'latent_dim': 64,
 
-    'mlp': [512, 512],
+    'mlp': [1024, 1024],
 }
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--name', default='create2_orin_reacher_mintime', type=str)
+    parser.add_argument('--name', default='create2_orin_nano_multi_reacher', type=str)
     parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--ob_type', default='MASK_OH', type=str) ## MASK, MASK_OH
+    
+    parser.add_argument('--image_height', default=60, type=int)
+    parser.add_argument('--image_width', default=80, type=int)
+    parser.add_argument('--image_history', default=2, type=int)
     parser.add_argument('--mode', default='img_prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
-    
-    parser.add_argument('--image_height', default=84, type=int)
-    parser.add_argument('--image_width', default=84, type=int)
-    parser.add_argument('--image_history', default=3, type=int)
 
     parser.add_argument('--camera_id', default=0, type=int)
-    parser.add_argument('--episode_length_time', default=15.0, type=float)
+    parser.add_argument('--episode_length_time', default=12.0, type=float)
+    parser.add_argument('--reward_scale', default=1.0, type=float)
     parser.add_argument('--dt', default=0.06, type=float)
-    parser.add_argument('--min_target_size', default=0.2, type=float)
-    parser.add_argument('--reset_penalty_steps', default=50, type=int)
-    parser.add_argument('--reward', default=-1, type=float)
+    parser.add_argument('--min_target_size', default=0.45, type=float)
     parser.add_argument('--pause_before_reset', default=0, type=float)
     parser.add_argument('--pause_after_reset', default=0, type=float)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=2_000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=100_000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=700, type=int)
-    parser.add_argument('--env_steps', default=2_000, type=int)
-    parser.add_argument('--task_timeout_mins', default=100, type=int)
+    parser.add_argument('--init_steps', default=5_000, type=int)
+    parser.add_argument('--env_steps', default=100_000, type=int)
+    parser.add_argument('--task_timeout_mins', default=-1, type=int)
     parser.add_argument('--min_charge', default=860, type=int)
-    parser.add_argument('--batch_size', default=256, type=int)
+    parser.add_argument('--batch_size', default=192, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
-
+    parser.add_argument('--global_norm', default=1.0, type=float)
+    parser.add_argument('--apply_weight_clip', default=False, action='store_true')
+    
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
     parser.add_argument('--num_critic_networks', default=5, type=int)
-    parser.add_argument('--num_critic_updates', default=2, type=int)
+    parser.add_argument('--num_critic_updates', default=1, type=int)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
@@ -74,7 +76,7 @@ def parse_args():
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    parser.add_argument('--actor_sync_freq', default=8, type=int)
+    parser.add_argument('--actor_sync_freq', default=16, type=int)
     
     # encoder
     parser.add_argument('--spatial_softmax', default=False, action='store_true')
@@ -88,14 +90,12 @@ def parse_args():
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=1000, type=int)
-    parser.add_argument('--save_wandb', default=False, action='store_true')
+    parser.add_argument('--xtick', default=2500, type=int)
+    parser.add_argument('--save_wandb', default=True, action='store_true')
 
-    parser.add_argument('--save_model', default=False, action='store_true')
+    parser.add_argument('--save_model', default=True, action='store_true')
     parser.add_argument('--save_model_freq', default=20000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
-    parser.add_argument('--start_step', default=0, type=int)
-    parser.add_argument('--start_episode', default=0, type=int)
 
     parser.add_argument('--buffer_save_path', default='', type=str)
     parser.add_argument('--buffer_load_path', default='', type=str)
@@ -114,13 +114,15 @@ def main(seed=-1):
     if seed != -1:
         args.seed = seed
 
+    args.start_episode, args.start_step = 0, 0
+
     RF_CONTINUE = 0
     RF_END_RUN_WO_SAVE = 1
     RF_END_RUN_W_SAVE = 2
 
     assert args.mode == MODE.IMG_PROP and args.sync_mode == False
 
-    args.name = f'{args.name}_{args.mode}'
+    args.name = f'{args.name}_{args.ob_type}'
     args.work_dir += f'/results/{args.name}/seed_{args.seed}'
 
     if os.path.exists(args.work_dir):
@@ -134,7 +136,7 @@ def main(seed=-1):
             shutil.rmtree(args.work_dir)
             print('Previous work dir removed.')
         elif inp == '':
-            pass
+            args.start_episode, args.start_step = get_episode_and_steps_from_log(args.work_dir)
         else:
             exit(0)
 
@@ -170,7 +172,8 @@ def main(seed=-1):
         L = Logger(args.work_dir, args.xtick, vars(args), 
                    args.save_tensorboard, args.save_wandb)
 
-    image_shape = (args.image_height, args.image_width, 3*args.image_history)
+    image_shape = (args.image_height, args.image_width, 4*args.image_history)
+    print(image_shape)
 
     env = Create2VisualReacherEnv(
         episode_length_time=args.episode_length_time, 
@@ -179,14 +182,15 @@ def main(seed=-1):
         camera_id=args.camera_id,
         min_target_size=args.min_target_size,
         pause_before_reset=args.pause_before_reset,
-        pause_after_reset=args.pause_after_reset)
+        pause_after_reset=args.pause_after_reset,
+        dense_reward=True,
+        multi_target=True,
+        ob_type=args.ob_type)
     
     episode_length_step = int(args.episode_length_time // args.dt)
     env = WrappedEnv(env, 
                      episode_max_steps=episode_length_step,
-                     is_min_time=True,
-                     reward_penalty=args.reset_penalty_steps * args.reward,
-                     steps_penalty=args.reset_penalty_steps,
+                     is_min_time=False,
                      start_step = args.start_step,
                      start_episode = args.start_episode)
     
@@ -203,17 +207,18 @@ def main(seed=-1):
     else:
         agent = AsyncSACRADAgent(vars(args))
 
-    task_end_time = task_start_time + (args.task_timeout_mins * 60)
+    task_end_time = -1
+    if args.task_timeout_mins > 0:
+        task_end_time = task_start_time + (args.task_timeout_mins * 60)
     state = env.reset()
     first_step = True
     update_paused = True
     pause_for_update = True
-    hits = 0
 
     while env.total_steps < args.env_steps:
         t1 = time.time()
-        if env.total_steps < args.init_steps + 100:
-            action = env.action_space.sample()
+        if env.total_steps < args.init_steps:
+            action = np.random.uniform(-1, 1, size=args.action_shape[-1])
         else:
             action = agent.sample_actions(state)
         t2 = time.time()
@@ -224,33 +229,21 @@ def main(seed=-1):
         mask = 1.0 if not done or 'truncated' in info else 0.0
 
         agent.add(state, action, reward, next_state, mask, first_step)
-        
         first_step = False
         state = next_state
 
         if done or 'truncated' in info:
             charge = info['battery_charge']
-            elapsed_time = "{:.3f}".format(time.time() - task_start_time)
 
-            if done:
-                info['tag'] = 'train'
-                info['elapsed_time'] = time.time() - task_start_time
-                info['dump'] = True
-                L.push(info)
-                state = env.reset()
-                first_step = True
-                hits += 1
-            else:
-                episode = info['episode']
-                sub_epi = info['sub_episode']
-                print(f'>> Episode {episode}, sub-episode {sub_epi} done. ' + 
-                  f'Step: {env.total_steps}, Elapsed time: {elapsed_time}s,' + 
-                  f' hits: {hits}')
-                state = env.reset(reset_stats=False)
-                first_step = True
+            info['tag'] = 'train'
+            info['elapsed_time'] = time.time() - task_start_time
+            info['dump'] = True
+            L.push(info)
+            state = env.reset() 
+            first_step = True
 
             rf = get_run_flag()
-            if time.time() > task_end_time or \
+            if (task_end_time > 0 and time.time() > task_end_time) or \
                 rf == RF_END_RUN_WO_SAVE or rf == RF_END_RUN_W_SAVE:
                 break
 
@@ -263,7 +256,7 @@ def main(seed=-1):
                 agent.resume_update()
                 update_paused = False
                 if pause_for_update:
-                    time.sleep(30)
+                    time.sleep(40)  ## Pause for initial jit compilation of udpate fucntion
                     pause_for_update = False
 
         if not update_paused and env.total_steps >= args.init_steps:

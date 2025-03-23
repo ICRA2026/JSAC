@@ -1,11 +1,11 @@
 import optax
 import numpy as np
-from jax import random
 from jax import numpy as jnp
+from jax import random
 from flax.training.train_state import TrainState
 
-from jsac.helpers.utils import MODE
 from jsac.algo.models import ActorModel, CriticModel, Temperature
+from jsac.helpers.utils import MODE
 
 
 def get_init_data(init_image_shape, 

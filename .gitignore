@@ -134,6 +134,7 @@ remote/
 buffers/
 wandb/
 *results*
+*plots*
 
 # PhpStorm
 .idea

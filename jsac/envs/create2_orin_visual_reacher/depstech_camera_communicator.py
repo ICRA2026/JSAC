@@ -11,6 +11,7 @@ from jsac.envs.create2_orin_visual_reacher.senseact_create_env.communicator impo
 
 
 class CameraCommunicator(Communicator):
+
     """
     Camera Communicator for interfacing with most common webcams supported by OpenCV.
     """
@@ -45,6 +46,7 @@ class CameraCommunicator(Communicator):
                         temp_cap.get(cv.CAP_PROP_FRAME_HEIGHT),
                         1 + (int(temp_cap.get(cv.CAP_PROP_FORMAT)) >> 3))
 
+            print('Camera real resolution: ({}, {})'.format(real_res[0], real_res[1]))
             if real_res[0] != res[0] or real_res[1] != res[1]:
                 print("Custom resolution ({}, {}) not supported, reset to default and use resize.".format(res[0], res[1]))
 
@@ -54,8 +56,11 @@ class CameraCommunicator(Communicator):
 
         self._res = res
         self._cap = None
+        w, h = res
 
-        sensor_args = {'array_len': int(3*np.product(self._res)),
+        self.zero_channel = np.zeros((h, w, 1), dtype=np.uint8)
+
+        sensor_args = {'array_len': int(4*np.product(self._res)),
                        'array_type': 'B',
                        'np_array_type': 'B',
                        }
@@ -95,6 +100,8 @@ class CameraCommunicator(Communicator):
         retval, frame = self._cap.read()
         if retval:
             frame = cv.resize(frame, self._res)
+            frame = np.concatenate([frame, self.zero_channel], axis=-1)
+
             # flatten and write to buffer
             self.sensor_buffer.write(frame.flatten())
 
@@ -104,3 +111,5 @@ class CameraCommunicator(Communicator):
 
     def get_image(self):
         return self.sensor_buffer.read_update()
+
+

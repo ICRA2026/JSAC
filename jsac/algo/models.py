@@ -1,8 +1,8 @@
 import jax 
 import jax.numpy as jnp
 import flax.linen as nn
-from typing import Optional, Sequence, Any
 from tensorflow_probability.substrates import jax as tfp
+from typing import Optional, Sequence, Any
 
 from jsac.helpers.utils import MODE
 

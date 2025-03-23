@@ -1,6 +1,6 @@
 import jax
-import functools
 from jax import random, numpy as jnp
+import functools
 
 from jsac.algo.replay_buffer import Batch
 

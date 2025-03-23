@@ -8,10 +8,12 @@ import gymnasium as gym
 import time
 import logging
 import numpy as np
+import random
 import jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_config as create2_config
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env import utils as utils
 
 from multiprocessing import Array, Value
+from collections import deque
 
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.rtrl_base_env import RTRLBaseEnv 
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_communicator import Create2Communicator
@@ -19,6 +21,10 @@ from jsac.envs.create2_orin_visual_reacher.senseact_create_env.create2_observati
 from jsac.envs.create2_orin_visual_reacher.senseact_create_env.sharedbuffer import SharedBuffer
 from jsac.envs.create2_orin_visual_reacher.depstech_camera_communicator import CameraCommunicator
 
+
+OB_TYPE_1 = "MASK"
+OB_TYPE_2 = "OH"
+OB_TYPE_3 = "MASK_OH"
 
 class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     """Create2 environment for training it drive forward.
@@ -30,7 +36,8 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
     """
 
     def __init__(self, episode_length_time=30, port='/dev/ttyUSB0', obs_history=1, dt=0.015, image_shape=(0, 0, 0),
-                 camera_id=0, min_target_size=0.1, pause_before_reset=0, pause_after_reset=0, dense_reward=False, **kwargs):
+                 camera_id=0, min_target_size=0.5, pause_before_reset=0, pause_after_reset=0, dense_reward=False, 
+                 multi_target=False, ob_type=OB_TYPE_1, **kwargs):
         """Constructor of the environment.
         Args:
             episode_length_time: A float duration of an episode defined in seconds
@@ -48,7 +55,20 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         self.pause_before_reset = pause_before_reset
         self.pause_after_reset = pause_after_reset
         self._internal_timing = 0.015
-        self._hsv_mask = ((35, 50, 150), (80, 165, 255))
+        self._ob_type = ob_type
+
+        if multi_target:
+            self._multi_target = True
+            self._target1 = 0 # 'Pink'
+            self._target2 = 1 # 'Green'
+            # self._target1_color_bgr = (204, 102, 255)
+            # self._target2_color_bgr = (0, 255, 0) 
+            self._target1_hsv = ((134, 71, 193), (191, 219, 255))
+            self._target2_hsv = ((40, 40, 120), (75, 100, 255))
+            self._current_target = self._target1
+            self._target_oh = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
+        else:
+            self._hsv_mask = ((134, 71, 193), (191, 219, 255))   ## PINK
         self._min_target_size = min_target_size
         self._min_battery = 850
         self._max_battery = 1600
@@ -101,9 +121,16 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         )
 
         # loop thru the observation dimension and get the lows and highs
+        low=np.concatenate([d.lows for d in self._observation_def])
+        high=np.concatenate([d.highs for d in self._observation_def])
+
+        if self._ob_type == OB_TYPE_2 or self._ob_type == OB_TYPE_3:
+            low = np.concatenate([low, [0.0, 0.0, 0.0, 0.0]])
+            high = np.concatenate([high, [1.0, 1.0, 1.0, 1.0]])
+
         self._observation_space = Box(
-            low=np.concatenate([d.lows for d in self._observation_def]),
-            high=np.concatenate([d.highs for d in self._observation_def])
+            low=low,
+            high=high
         )
 
         # self._comm_name = 'Create2'
@@ -130,7 +157,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                 )
 
         if image_shape != (0, 0, 0):
-            image_stack = int(image_shape[-1] // 3)
+            image_stack = int(image_shape[-1] // 4)
             communicator_setups['Camera'] = {'Communicator': CameraCommunicator,
                                              'num_sensor_packets': image_stack,
                                              'kwargs': 
@@ -151,6 +178,9 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                 array_type='d',
                 np_array_type='d',
                 )
+        
+            self._image_buffer = deque([], maxlen=image_stack)
+            self._blank_img = np.zeros((image_shape[0],image_shape[1],4))
 
         self._image_shape = image_shape
         self._image_space = Box(low=0, high=255, shape=self._image_shape)
@@ -201,31 +231,50 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                 print('Warning: image time and proprioception time is different by: {}s.'.format(delay))
                 #print
             # unflatten image
-            stacks = int(self._image_shape[-1]//3)
+            stacks = int(self._image_shape[-1]//4)
             height = self._image_shape[0]
             width = self._image_shape[1]
-            image = image.reshape((stacks, height, width, 3))
+            image = image.reshape((stacks, height, width, 4))
             # image = np.transpose(image.reshape((stacks, height, width, 3)), (0, 3, 1, 2)) # s, c, h, w
             image = np.concatenate(image, axis=-1) # change to self._image_shape
 
         #print('r_r:', r_r, "im_r:", im_r)
-        done = self._check_done(r_d or im_d)
+        done = (r_d or im_d)
         
-        reward = r_r+im_r-1
+        reward = r_r+im_r
+        
         if self._dense_reward:
             reward = im_r
-
+            if done > 0.5:
+                reward = 5.0
+        
         sensor_window, _, _ = self._sensor_comms['Create2'].sensor_buffer.read()
         battery_charge =  sensor_window[-1][0]['battery charge']
+
+        # if self._multi_target:
+        #     rect_h, rect_w = height//8, width//4
+        #     top = height - rect_h
+        #     left = (width - rect_w) // 2
+        #     right = left + rect_w
+        #     color = self._target1_color_bgr if self._current_target == self._target1 else self._target2_color_bgr
+        #     for i in range(stacks):
+        #         image[top:height, left:right, 3*i:3*i+3] = color
 
         return (image, roomba_obs), reward,  done, {'battery_charge': battery_charge}
 
     def _compute_image_obs_(self, sensor_window, timestamp_window, index_window):
         # return np.concatenate((actual_sensation, [reward], [done]))
         reward, done = self._calc_image_reward(sensor_window)
-        flatten_image = np.concatenate(sensor_window, axis=-1)
 
-        return np.concatenate((flatten_image, [done])).astype('uint8'), reward
+        # flatten_image = np.concatenate(sensor_window, axis=-1)
+
+        if len(self._image_buffer) < self._image_buffer.maxlen:
+            # print('Here', len(self._image_buffer), self._image_buffer.maxlen)
+            for _ in range(self._image_buffer.maxlen - len(self._image_buffer)):
+                self._image_buffer.append(self._blank_img)
+        flattened = np.concatenate(self._image_buffer, axis=-1).flatten()
+        # print('Here 2', len(self._image_buffer), flattened.shape)
+        return np.concatenate((flattened, [done])).astype('uint8'), reward
 
     def _compute_roomba_obs_(self, sensor_window, timestamp_window, index_window):
         """The required _computer_sensation_ interface.
@@ -243,6 +292,9 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         for d in self._observation_def:
             res = d.normalized_handler(sensor_window)
             actual_obs.extend(res)
+        
+        if self._ob_type == OB_TYPE_2 or self._ob_type == OB_TYPE_3:
+            actual_obs.extend(self._target_oh[self._current_target])
 
         # accumulate the rotation information
         # self._total_rotation += sensor_window[-1][0]['angle']
@@ -276,6 +328,13 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         """The required _reset_ interface.
         This method does the handling of charging the Create2, repositioning, and set to the correct mode.
         """
+        
+        if self._multi_target:
+            if random.random() < 0.5:
+                self._current_target = self._target2 if self._current_target == self._target1 else self._target1
+            else:
+                self._current_target = random.choice([self._target1, self._target2])
+
         logging.info("Resetting...")
         self._write_opcode('drive', 0, 0)
         time.sleep(0.1)
@@ -323,7 +382,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         target_values = [300, 300]
         # target_values = [-300, -300]
         move_time_1 = np.random.uniform(low=1, high=1.5)
-        move_time_2 = np.random.uniform(low=0.3, high=0.6)
+        move_time_2 = np.random.uniform(low=0.3, high=0.7)
         rotate_time_1 = np.random.uniform(low=0.25, high=0.75)
         rotate_time_2 = np.random.uniform(low=0.5, high=1)
         direction = np.random.choice((1, -1))
@@ -341,6 +400,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         time.sleep(0.1)
 
         # rotate
+        direction = np.random.choice((1, -1))
         self._write_opcode('drive_direct', *(300*direction, -300*direction))
         time.sleep(rotate_time_2)
         self._write_opcode('drive', 0, 0)
@@ -392,7 +452,13 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
             # for _ in range(SharedBuffer.DEFAULT_BUFFER_LEN):
             #     _, _, _ = self._image_obs_buffer.read_update()
 
+
+        for _ in range(self._image_buffer.maxlen):
+            self._image_buffer.append(self._blank_img)
+
         print("Reset completed.")
+        if self._multi_target:
+            print('Target:', self._current_target)
 
     def _check_done(self, env_done):
         """The required _check_done_ interface.
@@ -445,21 +511,41 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         reward = 0.0
         done = 0
         image = sensor_window[-1]
-        image = image.reshape(self._image_shape[0], self._image_shape[1], 3)
+        image = image.reshape(self._image_shape[0], self._image_shape[1], 4)
+        image = image[:, :, 0:3]
+
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, np.array(self._hsv_mask[0]), np.array(self._hsv_mask[1]))
-        output = cv2.bitwise_and(image, image, mask=mask)
-        gray = cv2.cvtColor(output, cv2.COLOR_BGR2GRAY) # original rgb2gray
-        _, blackAndWhiteImage = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(blackAndWhiteImage, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.fillPoly(blackAndWhiteImage, pts=contours, color=(255, 255, 255))
-        target_size = np.sum(blackAndWhiteImage/255.) / blackAndWhiteImage.size
+
+        if not self._multi_target:
+            mask = cv2.inRange(hsv, np.array(self._hsv_mask[0]), np.array(self._hsv_mask[1]))
+        else:
+            if self._current_target == self._target1:
+                mask = cv2.inRange(hsv, np.array(self._target1_hsv[0]), np.array(self._target1_hsv[1]))
+            else:
+                mask = cv2.inRange(hsv, np.array(self._target2_hsv[0]), np.array(self._target2_hsv[1]))
+
+        # output = cv2.bitwise_and(image, image, mask=mask)
+        # gray = cv2.cvtColor(output, cv2.COLOR_BGR2GRAY) # original rgb2gray
+        # _, blackAndWhiteImage = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
+        # contours, _ = cv2.findContours(blackAndWhiteImage, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # cv2.fillPoly(blackAndWhiteImage, pts=contours, color=(255, 255, 255))
+        # target_size = np.sum(blackAndWhiteImage/255.) / blackAndWhiteImage.size
+        
+        kernel = np.ones((3, 3), 'uint8')
+        mask = cv2.dilate(mask, kernel, iterations=2)
+        mask = cv2.erode(mask, kernel, iterations=2)
+
+        target_size = np.sum(mask/255.) / mask.size
+        
         #print('target size:', target_size)
         if target_size >= self._min_target_size:
             done = 1
 
         if self._dense_reward:
-            reward = target_size
+            reward = (2.0/(1+np.exp(-target_size*10.0))) - 1.0 
+            reward -= 1
+
+        self._image_buffer.append(np.concatenate((image, np.expand_dims(mask, axis=-1)), axis=2))
 
         return reward, done
 

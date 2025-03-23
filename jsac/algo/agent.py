@@ -2,22 +2,22 @@ import os
 import jax
 import flax
 import time
-import copy
 import orbax
+import copy
 import shutil
-import functools
 import numpy as np
+import functools
 from jax import random
-import jax.numpy as jnp
 import multiprocessing as mp
+import jax.numpy as jnp
 from threading import Thread
 from flax.training import orbax_utils
 
 from jsac.helpers.utils import MODE
-from jsac.algo.update_functions import update_jit
 from jsac.algo.initializers import init_actor, init_critic
-from jsac.algo.replay_buffer import ReplayBuffer, AsyncSMReplayBuffer
+from jsac.algo.update_functions import update_jit
 from jsac.algo.initializers import init_temperature, init_inference_actor 
+from jsac.algo.replay_buffer import ReplayBuffer, AsyncSMReplayBuffer
 
 
 class BaseAgent:

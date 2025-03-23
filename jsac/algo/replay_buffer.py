@@ -1,8 +1,8 @@
 import os
-import time
-import pickle
 import threading
 import numpy as np
+import time
+import pickle
 import collections
 from multiprocessing import shared_memory, Process, Queue, Lock
 
