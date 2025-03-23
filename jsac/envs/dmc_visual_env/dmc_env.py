@@ -97,12 +97,9 @@ class DMCVisualEnv(gym.Wrapper):
             
         # Observation space
         self._obs_dim = 0
-        for key, val in self._env.observation_spec().items(): 
-            if isinstance(val, np.ndarray):
-                self._obs_dim += val.size
-            else:
-                self._obs_dim += 1
-
+        time_step = self._env.reset() 
+        ob = self._make_obs(time_step.observation)
+        self._obs_dim = ob.size
         
         # Action space
         self._action_dim = self._env.action_spec().shape[0]
