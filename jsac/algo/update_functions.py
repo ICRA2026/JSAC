@@ -151,23 +151,23 @@ def update_jit(rng,
     rng, key1, key2 = random.split(rng, 3)
 
     img_fl = batch.images is not None
+    prop_fl = batch.proprioceptions is not None
 
     if img_fl:
         images = batched_random_crop(key1, batch.images)
         next_images = batched_random_crop(key2, batch.next_images)
         
-        batch = batch._replace(images=images,
-                            next_images=next_images)
+        batch = batch._replace(images=images, next_images=next_images)
         
     batch_size = batch.actions.shape[0] // num_critic_updates
     for i in range(num_critic_updates):
         m_batch = Batch(images=batch.images[i*batch_size: (i+1)*batch_size] if img_fl else None,
-                        proprioceptions=batch.proprioceptions[i*batch_size: (i+1)*batch_size],
+                        proprioceptions=batch.proprioceptions[i*batch_size: (i+1)*batch_size] if prop_fl else None,
                         actions=batch.actions[i*batch_size: (i+1)*batch_size],
                         rewards=batch.rewards[i*batch_size: (i+1)*batch_size],
                         masks=batch.masks[i*batch_size: (i+1)*batch_size],
                         next_images=batch.next_images[i*batch_size: (i+1)*batch_size] if img_fl else None,
-                        next_proprioceptions=batch.next_proprioceptions[i*batch_size: (i+1)*batch_size],)
+                        next_proprioceptions=batch.next_proprioceptions[i*batch_size: (i+1)*batch_size] if prop_fl else None,)
         
         rng, critic, critic_info = critic_update(
             rng, 

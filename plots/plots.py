@@ -140,6 +140,7 @@ def plot_steps():
 
     jsac_results_base_path = 'results/results_jsac/results'
     sb3_results_base_path = 'results/results_sb3/results' 
+    redq_results_base_path = 'results/results_reqd/results'
 
     ## PLOT PROP
     ylabel = False
@@ -149,20 +150,22 @@ def plot_steps():
         jsac_env_res_folder = env_name + '_prop'
         jsac_path = os.path.join(jsac_results_base_path, jsac_env_res_folder)
         sb3_path = os.path.join(sb3_results_base_path, env_name)
-        path = [jsac_path, sb3_path]
+        redq_path = os.path.join(redq_results_base_path, env_name)
+
+        path = [jsac_path, sb3_path, redq_path]
         output_path = f'results/plot_imgs/prop/{env_name}.png'
 
         avg_graph(
             file_paths=path,
             colors=sns.color_palette('bright'), 
-            labels=[f'jsac', 'sb3'], 
-            file_types=['log', 'csv'], 
+            labels=['jsac', 'sb3', 'redq'], 
+            file_types=['log', 'csv', 'log'], 
             seeds=range(15), 
             ylim=None, 
             title=title + ' - Eval', 
             maxlen=1_000_000,
             output_path=output_path,
-            mlts=[1, 1],
+            mlts=[1, 1, 1],
             remove_ylabel=ylabel)
         
         ylabel = True
@@ -309,4 +312,4 @@ def plot_times():
 
 if __name__ == "__main__": 
     plot_steps()
-    plot_times()
+    # plot_times()

@@ -21,7 +21,7 @@ from jsac.algo.initializers import init_temperature, init_inference_actor
 
 
 class BaseAgent:
-    def __init__(self, args):
+    def __init__(self, args, sync_queue=None):
         for key in args:
             if key == 'seed':
                 self._rng = jax.random.PRNGKey(args[key])
@@ -38,6 +38,11 @@ class BaseAgent:
             self._spatial_softmax = False
         else:
             self._obs_queue = mp.Queue()
+            
+        if sync_queue:    
+            self._sync_queue = sync_queue
+        else:
+            self._sync_queue = None
         
         self._dtype = jnp.float32
         
@@ -139,6 +144,9 @@ class BaseAgent:
         self._update_step += 1
 
         t1 = time.time()
+        
+        if self._sync_queue:
+            self._sync_queue.get(timeout=400)
          
         batch = self._replay_buffer.sample() 
                 
@@ -252,12 +260,12 @@ class SACRADAgent(BaseAgent):
 
 class AsyncSACRADAgent(BaseAgent):
 
-    def __init__(self, args):
+    def __init__(self, args, sync_queue=None):
         """
         An implementation of the version of Soft-Actor-Critic 
         described in https://arxiv.org/abs/1812.05905
         """
-        super().__init__(args)
+        super().__init__(args, sync_queue)
 
         self._obs_queue = mp.Queue()
         self._actor_queue = mp.Queue()
