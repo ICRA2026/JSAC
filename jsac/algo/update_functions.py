@@ -1,9 +1,11 @@
 import jax
 from jax import random, numpy as jnp
 import functools
+import numpy as np
 
 from jsac.algo.replay_buffer import Batch
 
+CLIP_CONST = 2.0 * np.sqrt(2) ## KP = 2.0, s_l = sqrt(2)
 
 def critic_update(rng, 
                   actor, 
@@ -14,7 +16,7 @@ def critic_update(rng,
                   discount,
                   apply_weight_clip):
 
-    rng, key_ac, key_tq = random.split(rng, 3)
+    rng, key_ac = random.split(rng, 2)
     
     critic_target = critic.replace(params=critic_target_params)
     
@@ -52,6 +54,9 @@ def critic_update(rng,
     
     grads, info = jax.grad(critic_loss_fn, has_aux=True)(critic.params)
     critic_new = critic.apply_gradients(grads=grads)
+    if apply_weight_clip:
+        clipped_params = jax.tree_util.tree_map(lambda x: jnp.clip(x, -CLIP_CONST, CLIP_CONST), critic_new.params)
+        critic_new = critic_new.replace(params=clipped_params)
     return rng, critic_new, info
 
 
@@ -93,6 +98,9 @@ def actor_update(rng,
 
     grads, info = jax.grad(actor_loss_fn, has_aux=True)(actor.params)
     actor_new = actor.apply_gradients(grads=grads)
+    if apply_weight_clip:
+        clipped_params = jax.tree_util.tree_map(lambda x: jnp.clip(x, -CLIP_CONST, CLIP_CONST), actor_new.params)
+        actor_new = actor_new.replace(params=clipped_params)
     return rng, actor_new, info
 
 
