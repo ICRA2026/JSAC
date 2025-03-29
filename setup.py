@@ -9,7 +9,7 @@ setup(
     url='https://github.com/fahimfss/JSAC',
     packages=find_packages(include=['jsac', 'jsac.*']),
     install_requires=[ 
-        'gymnasium==0.29.0',
+        'gymnasium==1.1.1',
         'seaborn==0.13.2',
         'termcolor==2.4.0',
         'tensorboardX==2.6.2.2',
