@@ -106,8 +106,6 @@ class DMCVisualEnv(gym.Wrapper):
 
         self._latest_image = None
         self._reset = False
-        
-        super(DMCVisualEnv, self).__init__(self._env)
 
     @property
     def image_space(self):
