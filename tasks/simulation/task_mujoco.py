@@ -36,40 +36,57 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--seed', default=9, type=int)
     parser.add_argument('--mode', default='prop', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
+    ## In prop (short for proprioception) mode, image only args such as 
+    ## image_height, image_width, etc will be ignored
     
     parser.add_argument('--env_name', default='Hopper-v5', type=str)
-    parser.add_argument('--image_height', default=96, type=int)     # Mode: img, img_prop
-    parser.add_argument('--image_width', default=96, type=int)      # Mode: img, img_prop     
-    parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
+    parser.add_argument('--image_height', default=96, type=int) 
+    parser.add_argument('--image_width', default=96, type=int)    
+    parser.add_argument('--image_history', default=3, type=int) 
 
     # replay buffer
     parser.add_argument('--replay_buffer_capacity', default=1_000_000, type=int)
     
     # train
     parser.add_argument('--init_steps', default=5_000, type=int)
-    parser.add_argument('--env_steps', default=1_000_000, type=int)
+    parser.add_argument('--env_steps', default=1_000_000, type=int)  ## A.K.A. total_steps
     parser.add_argument('--batch_size', default=256, type=int)
-    parser.add_argument('--sync_mode', default=True, action='store_true')
+    parser.add_argument('--sync_mode', default=True, action='store_true') 
+    ## In sync mode, network updates take place after env step
+    ## In async mode, network updates take place in parallel to env steps
+    
     parser.add_argument('--global_norm', default=1.0, type=float)
+    ## optax.clip_by_global_norm() param value for actor and critic networks
+    
+    parser.add_argument('--layer_norm', default=False, action='store_true')
+    ## If set to True, nn.LayerNorm is applied after each hidden layer
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
     parser.add_argument('--num_critic_networks', default=5, type=int)
+    ## Note: SAC default num_critic_networks is 2
+    
     parser.add_argument('--num_critic_updates', default=1, type=int)
+    ## Number of critic updates per step.
+    
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=1, type=int)
     
     # actor
     parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=1, type=int)
-    parser.add_argument('--actor_sync_freq', default=8, type=int)   # Sync mode: False
+    parser.add_argument('--actor_sync_freq', default=8, type=int) 
+    ## If sync_mode is False (or in async_mode), the actor network is updated 
+    ## after this many network updates. In default case, the actor network is
+    ## updated after 8 network update steps.
     
     # encoder
-    parser.add_argument('--spatial_softmax', default=False, action='store_true')    # Mode: img, img_prop
-
+    parser.add_argument('--spatial_softmax', default=False, action='store_true') 
+    ## https://arxiv.org/abs/1509.06113
+    
     # sac
     parser.add_argument('--temp_lr', default=3e-4, type=float)
     parser.add_argument('--init_temperature', default=1.0, type=float)
@@ -83,14 +100,27 @@ def parse_args():
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
-    parser.add_argument('--xtick', default=10_000, type=int)
-    parser.add_argument('--save_wandb', default=False, action='store_true')
+    ## Install tensorboard "pip install tensorboard" to view the logs
     
+    parser.add_argument('--xtick', default=10_000, type=int)
+    ## Learning curves binning size
+    
+    parser.add_argument('--save_wandb', default=False, action='store_true')
+    ## To install and authenticate wandb: https://docs.wandb.ai/quickstart/
+    
+    # Set flags to save or load the model:
     parser.add_argument('--save_model', default=False, action='store_true')
-    parser.add_argument('--save_model_freq', default=1_000_000, type=int)
+    parser.add_argument('--save_model_freq', default=-1, type=int)
+    ## To save the models every 10K steps, set save_model to True and 
+    ## save_model_freq to 10000
+    
     parser.add_argument('--load_best_model', default=False)
-    parser.add_argument('--load_model', default=-1, type=int)
+    ## Loads the model that had the highest score in eval
 
+    parser.add_argument('--load_model', default=-1, type=int)
+    ## Loads a saved model from the checkpoints folder.
+
+    # Save or load the replay buffer (Warning: High disk space usage!): 
     parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
     parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
 
@@ -117,10 +147,9 @@ def main(seed=-1):
     if os.path.exists(args.work_dir):
         inp = input('The work directory already exists. ' +
                     'Please select one of the following: \n' +  
-                    '  1) Press Enter to resume the run.\n' + 
-                    '  2) Press X to remove the previous work' + 
-                    ' directory and start a new run.\n' + 
-                    '  3) Press any other key to exit.\n')
+                    '  1) Press Enter to keep the existing work directory and resume the run.\n' + 
+                    '  2) Press X to remove the previous work directory and start a new run.\n' + 
+                    '  3) Press any other key to exit this run.\n')
         if inp == 'X' or inp == 'x':
             shutil.rmtree(args.work_dir)
             print('Previous work dir removed.')

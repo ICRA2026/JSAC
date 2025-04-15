@@ -95,6 +95,7 @@ class BaseAgent:
             self._net_params,
             self._action_dim, 
             self._spatial_softmax,
+            self._layer_norm,
             self._mode,
             self._dtype,
             self._num_critic_networks,
@@ -110,6 +111,7 @@ class BaseAgent:
             self._net_params,
             self._action_dim, 
             self._spatial_softmax, 
+            self._layer_norm,
             self._mode,
             self._dtype,
             self._global_norm)
@@ -279,7 +281,7 @@ class AsyncSACRADAgent(BaseAgent):
         self._instructions_queue = mp.Queue()
 
         self._actor_lock = mp.Lock()
-        self._closeing_lock = mp.Lock()
+        self._closing_lock = mp.Lock()
 
         self._pause_update = True
 
@@ -293,6 +295,7 @@ class AsyncSACRADAgent(BaseAgent):
             self._net_params, 
             self._action_dim, 
             self._spatial_softmax,
+            self._layer_norm,
             self._mode,
             self._dtype)
 
@@ -302,7 +305,7 @@ class AsyncSACRADAgent(BaseAgent):
         self._actor_update_thread.start()
 
     def _init_async(self):
-        self._closeing_lock.acquire()
+        self._closing_lock.acquire()
         self._init_buffers()
         self._init_models(self._image_shape, self._proprioception_shape)
         self._actor_queue.put(self._actor.params)
@@ -366,14 +369,14 @@ class AsyncSACRADAgent(BaseAgent):
                     if self._buffer_save_path:
                         self._replay_buffer.save(self._buffer_save_path)
                     self._replay_buffer.close()
-                    self._closeing_lock.release()
+                    self._closing_lock.release()
                     return
                 
                 elif ins == 'close_no_save':
                     print('Closing asynchronous updates. ' 
                           f'Completed {self._update_step} updates.')
                     self._replay_buffer.close()
-                    self._closeing_lock.release()
+                    self._closing_lock.release()
                     return
 
             info = super().update()
@@ -403,7 +406,7 @@ class AsyncSACRADAgent(BaseAgent):
             self._instructions_queue.put('close_no_save')
         else:
             self._instructions_queue.put('close')
-        with self._closeing_lock:
+        with self._closing_lock:
             self._actor_queue.put('close')
             time.sleep(1)
             self._update_process.terminate()

@@ -31,6 +31,7 @@ def init_critic(rng,
                 net_params, 
                 action_dim, 
                 spatial_softmax,
+                layer_norm,
                 mode,
                 dtype,
                 num_critic_networks,
@@ -38,7 +39,8 @@ def init_critic(rng,
 
     model = CriticModel(net_params, 
                         action_dim, 
-                        spatial_softmax,  
+                        spatial_softmax, 
+                        layer_norm,
                         mode,
                         dtype,
                         num_critic_networks)
@@ -72,12 +74,14 @@ def init_inference_actor(rng,
                          net_params, 
                          action_dim, 
                          spatial_softmax, 
+                         layer_norm,
                          mode,
                          dtype):
     
     model = ActorModel(net_params,
                        action_dim,  
                        spatial_softmax,
+                       layer_norm,
                        mode, 
                        dtype)
     
@@ -102,6 +106,7 @@ def init_actor(rng,
                net_params,  
                action_dim, 
                spatial_softmax, 
+               layer_norm,
                mode, 
                dtype, 
                global_norm):
@@ -109,6 +114,7 @@ def init_actor(rng,
     model = ActorModel(net_params,
                        action_dim,  
                        spatial_softmax,
+                       layer_norm,
                        mode, 
                        dtype)
 

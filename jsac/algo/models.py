@@ -45,6 +45,7 @@ class SpatialSoftmax(nn.Module):
 class Encoder(nn.Module):
     net_params: dict 
     spatial_softmax: bool = True
+    layer_norm: bool = True
     mode: str = MODE.IMG_PROP
     dtype: Any = jnp.float32
 
@@ -64,7 +65,8 @@ class Encoder(nn.Module):
                         param_dtype=self.dtype,
                         name=layer_name)(x) 
             if i < len(conv_params) - 1:
-                x = nn.LayerNorm(dtype=self.dtype, param_dtype=self.dtype)(x)
+                if self.layer_norm:
+                    x = nn.LayerNorm(dtype=self.dtype, param_dtype=self.dtype)(x)
                 x = nn.leaky_relu(x)
                 
         b, height, width, channel = x.shape
@@ -80,6 +82,7 @@ class Encoder(nn.Module):
 class MLP(nn.Module):
     hidden_dims: Sequence[int]
     activate_final: int = False
+    layer_norm: bool = True
     dtype: Any = jnp.float32
 
     @nn.compact
@@ -87,7 +90,8 @@ class MLP(nn.Module):
         for i, size in enumerate(self.hidden_dims):
             x = nn.Dense(size, kernel_init=default_init(dtype=self.dtype))(x)
             if i + 1 < len(self.hidden_dims) or self.activate_final:
-                x = nn.LayerNorm(dtype=self.dtype, param_dtype=self.dtype)(x)
+                if self.layer_norm:
+                    x = nn.LayerNorm(dtype=self.dtype, param_dtype=self.dtype)(x)
                 x = nn.relu(x)
         return x
 
@@ -99,6 +103,7 @@ class ActorModel(nn.Module):
     net_params: dict 
     action_dim: int
     spatial_softmax: bool = True
+    layer_norm: bool = True
     mode: str = MODE.IMG_PROP
     dtype: Any = jnp.float32
 
@@ -112,6 +117,7 @@ class ActorModel(nn.Module):
         if self.mode == MODE.IMG or self.mode == MODE.IMG_PROP:
             x = Encoder(self.net_params, 
                         self.spatial_softmax, 
+                        self.layer_norm, 
                         self.mode, 
                         self.dtype, 
                         name='encoder')(images)
@@ -126,7 +132,10 @@ class ActorModel(nn.Module):
         else:
             x = proprioceptions 
 
-        outputs = MLP(self.net_params['mlp'], activate_final=True, dtype=self.dtype)(x)
+        outputs = MLP(self.net_params['mlp'], 
+                      activate_final=True, 
+                      layer_norm=self.layer_norm,
+                      dtype=self.dtype)(x)
         init = default_init(1.0, self.dtype)
         mu = nn.Dense(self.action_dim, kernel_init=init, dtype=self.dtype)(outputs)
         log_std = nn.Dense(self.action_dim, kernel_init=init, dtype=self.dtype)(outputs)
@@ -149,12 +158,16 @@ class ActorModel(nn.Module):
 
 class QFunction(nn.Module):
     hidden_dims: Sequence[int]
+    layer_norm: bool = True
     dtype: Any = jnp.float32
 
     @nn.compact
     def __call__(self, latents, actions):
         inputs = jnp.concatenate([latents, actions], -1)
-        outputs = MLP(self.hidden_dims, activate_final=True, dtype=self.dtype)(inputs)
+        outputs = MLP(self.hidden_dims, 
+                      activate_final=True, 
+                      layer_norm=self.layer_norm,
+                      dtype=self.dtype)(inputs)
         critic = nn.Dense(1, kernel_init=default_init(1.0, self.dtype), dtype=self.dtype)(outputs)
         return jnp.squeeze(critic, -1)
 
@@ -163,6 +176,7 @@ class CriticModel(nn.Module):
     net_params: dict  
     action_dim: int
     spatial_softmax: bool = True
+    layer_norm: bool = True
     mode: str = MODE.IMG_PROP
     dtype: Any = jnp.float32
     num_critic_networks: int = 10
@@ -171,13 +185,14 @@ class CriticModel(nn.Module):
     def __call__(self, images, proprioceptions, actions):
         if self.mode == MODE.IMG or self.mode == MODE.IMG_PROP:
             x = Encoder(self.net_params, 
-                            self.spatial_softmax,
-                            self.mode,
-                            self.dtype,
-                            name='encoder')(images)
+                        self.spatial_softmax, 
+                        self.layer_norm, 
+                        self.mode, 
+                        self.dtype, 
+                        name='encoder')(images)
             x = nn.Dense(self.net_params['latent_dim'], 
                          kernel_init=default_init(dtype=self.dtype))(x)
-            x = nn.LayerNorm()(x)
+            x = nn.LayerNorm(dtype=self.dtype, param_dtype=self.dtype)(x)
             x = nn.tanh(x)
             if self.mode == MODE.IMG_PROP:
                 proprioceptions = jnp.clip(proprioceptions, -10, 10)
@@ -192,7 +207,7 @@ class CriticModel(nn.Module):
             in_axes=None,
             out_axes=0,
             axis_size=self.num_critic_networks)
-        qs = VmapCritic(self.net_params['mlp'], self.dtype)(x, actions)
+        qs = VmapCritic(self.net_params['mlp'], self.layer_norm, self.dtype)(x, actions)
         
         return qs 
     

@@ -36,11 +36,11 @@ config = {
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--seed', default=6, type=int)
+    parser.add_argument('--seed', default=9, type=int)
     parser.add_argument('--mode', default='img', type=str, 
                         help="Modes in ['img', 'img_prop', 'prop']")
     
-    parser.add_argument('--env_name', default='cheetah', type=str)
+    parser.add_argument('--env_name', default='walker_walk', type=str)
     parser.add_argument('--image_height', default=96, type=int)     # Mode: img, img_prop
     parser.add_argument('--image_width', default=96, type=int)      # Mode: img, img_prop     
     parser.add_argument('--image_history', default=3, type=int)     # Mode: img, img_prop
@@ -55,6 +55,7 @@ def parse_args():
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=False, action='store_true')
     parser.add_argument('--global_norm', default=1.0, type=float)
+    parser.add_argument('--layer_norm', default=True, action='store_true')
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 

@@ -57,6 +57,7 @@ def eval(args, log_dir, eval_queue, num_eval_episodes):
                                       args['net_params'],
                                       args['action_shape'][-1],
                                       args['spatial_softmax'],
+                                      args['layer_norm'],
                                       args['mode'],
                                       jnp.float32)
     

@@ -576,7 +576,7 @@ class AsyncSMReplayBuffer(ReplayBuffer):
 
     def _close_sp(self):
         self._obs_queue.put('close')
-        print('Closng replay buffer shared memory..')
+        print('Closing replay buffer shared memory..')
         with self._lock:
             for mem in self._sb_0_sm:
                 if mem is not None:

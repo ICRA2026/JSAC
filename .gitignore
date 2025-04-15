@@ -131,10 +131,6 @@ backups/
 remote/
 *err
 *out
-buffers/
-wandb/
-*results*
-*plots*
 
 # PhpStorm
 .idea
@@ -142,6 +138,11 @@ wandb/
 # VSCode
 .vscode
 
+# other
 ros.txt
-
 *grabs.txt
+*.mp4
+buffers/
+wandb/
+*results*
+*plots*
