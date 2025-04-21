@@ -240,8 +240,13 @@ class Create2ChargingSourcesAvailableDim(Create2ObservationDim):
 class Create2PrevActionDim(Create2ObservationDim):
     """Special dimension that returns the previous action."""
     def _ranges(self):
-        return list(create2_config.OPCODE_INFO[
+        l = list(create2_config.OPCODE_INFO[
                         create2_config.OPCODE_NAME_TO_CODE[self._main_op]]['params'].values())
+        
+        for i in range(28):
+            l.extend([l[0]])
+
+        return l
 
     def _handler(self, sensor_window):
         """

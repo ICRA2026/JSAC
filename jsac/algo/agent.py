@@ -148,42 +148,46 @@ class BaseAgent:
 
       
     def update(self):
-        self._update_step += 1
+        try: 
+            self._update_step += 1
 
-        t1 = time.time()
-        
-        if self._sync_queue:
-            self._sync_queue.get(timeout=400)
-         
-        batch = self._replay_buffer.sample() 
+            t1 = time.time()
+
+            if self._sync_queue:
+                self._sync_queue.get(timeout=300)
                 
-        self._rng, actor, critic, critic_target_params, temp, info = update_jit(
-            self._rng,
-            self._actor,
-            self._critic,
-            self._critic_target_params,
-            self._temp,
-            batch,
-            self._discount,
-            self._critic_tau,
-            self._target_entropy,
-            self._update_step % self._actor_update_freq == 0,
-            self._update_step % self._critic_target_update_freq == 0,
-            self._num_critic_updates,
-            self._apply_weight_clip)
+            batch = self._replay_buffer.sample() 
+                    
+            self._rng, actor, critic, critic_target_params, temp, info = update_jit(
+                self._rng,
+                self._actor,
+                self._critic,
+                self._critic_target_params,
+                self._temp,
+                batch,
+                self._discount,
+                self._critic_tau,
+                self._target_entropy,
+                self._update_step % self._actor_update_freq == 0,
+                self._update_step % self._critic_target_update_freq == 0,
+                self._num_critic_updates,
+                self._apply_weight_clip)
 
-        jax.block_until_ready(actor.params)
-        self._actor = actor
-        self._critic = critic
-        self._critic_target_params = critic_target_params
-        self._temp = temp
+            jax.block_until_ready(actor.params)
+            self._actor = actor
+            self._critic = critic
+            self._critic_target_params = critic_target_params
+            self._temp = temp
 
-        t2 = time.time()
+            t2 = time.time()
 
-        info['update_time'] = (t2 - t1) * 1000
-        info['num_updates'] = self._update_step
+            info['update_time'] = (t2 - t1) * 1000
+            info['num_updates'] = self._update_step
 
-        return [info]
+            return [info]
+        
+        except:
+            return []
 
     def _load_model_fnc(self):
         model_dir = os.path.join(self._model_dir, str(self._load_model)) 
@@ -380,8 +384,8 @@ class AsyncSACRADAgent(BaseAgent):
                     return
 
             info = super().update()
-
-            self._update_queue.put(info[0])
+            if len(info) > 0:
+                self._update_queue.put(info[0])
             if self._update_step % self._actor_sync_freq == 0:
                 self._actor_queue.put(self._actor.params)        
 

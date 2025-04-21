@@ -54,11 +54,11 @@ def parse_args():
     parser.add_argument('--pause_after_reset', default=0, type=float)
 
     # replay buffer
-    parser.add_argument('--replay_buffer_capacity', default=75_000, type=int)
+    parser.add_argument('--replay_buffer_capacity', default=5000, type=int)
     
     # train
-    parser.add_argument('--init_steps', default=5_000, type=int)
-    parser.add_argument('--env_steps', default=75_000, type=int)
+    parser.add_argument('--init_steps', default=100000, type=int)
+    parser.add_argument('--env_steps', default=100000, type=int)
     parser.add_argument('--task_timeout_mins', default=-1, type=int)
     parser.add_argument('--min_charge', default=1005, type=int)
     parser.add_argument('--batch_size', default=160, type=int)
@@ -91,14 +91,14 @@ def parse_args():
     parser.add_argument('--save_tensorboard', default=False, 
                         action='store_true')
     parser.add_argument('--xtick', default=2500, type=int)
-    parser.add_argument('--save_wandb', default=True, action='store_true')
+    parser.add_argument('--save_wandb', default=False, action='store_true')
 
-    parser.add_argument('--save_model', default=True, action='store_true')
+    parser.add_argument('--save_model', default=False, action='store_true')
     parser.add_argument('--save_model_freq', default=5000, type=int)
-    parser.add_argument('--load_model', default=-1, type=int)
+    parser.add_argument('--load_model', default=75000, type=int)
 
-    parser.add_argument('--buffer_save_path', default='', type=str) # ./buffers/
-    parser.add_argument('--buffer_load_path', default='', type=str) # ./buffers/
+    parser.add_argument('--buffer_save_path', default='./buffer/', type=str)
+    parser.add_argument('--buffer_load_path', default='', type=str)
 
     args = parser.parse_args()
     return args
@@ -220,13 +220,11 @@ def main(seed=-1):
     first_step = True
     update_paused = True
     pause_for_update = True
+    count = 0
 
     while env.total_steps < args.env_steps:
         t1 = time.time()
-        if env.total_steps < args.init_steps:
-            action = np.random.uniform(-1, 1, size=args.action_shape[-1])
-        else:
-            action = agent.sample_actions(state)
+        action = agent.sample_actions(state)
         t2 = time.time()
         next_state, reward, done, info = env.step(action)
         t3 = time.time()
@@ -265,6 +263,10 @@ def main(seed=-1):
                     sync_queue.put(1)
                     time.sleep(40)  ## Pause for initial jit compilation of udpate fucntion
                     pause_for_update = False
+
+            count += 1
+            if count == 5:
+                break
 
         if sync_queue and not update_paused:
             sync_queue.put(1)

@@ -70,12 +70,12 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
             self._target1_hsv = ((134, 71, 193), (191, 219, 255))
             self._target2_hsv = ((40, 40, 120), (75, 100, 255))
             self._current_target = self._target1
-            self._target_oh = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
+            self._target_oh = [[1.0, 0.0], [0.0, 1.0]]
         else:
             self._hsv_mask = ((134, 71, 193), (191, 219, 255))   ## PINK
         self._min_target_size = min_target_size
         self._min_battery = 1000
-        self._max_battery = 1600
+        self._max_battery = 1700
         self._dense_reward = dense_reward
 
         # get the opcode for our main action (only 1 action)
@@ -85,7 +85,8 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         extra_opcodes = [create2_config.OPCODE_NAME_TO_CODE[op] for op in self._extra_ops]
 
         # store the previous action/reward to be shared across processes
-        self._prev_action_ = np.frombuffer(Array('i', 2).get_obj(), dtype='i')
+        self._prev_action_buffer = deque([], maxlen=15)
+        self._prev_action_ = np.frombuffer(Array('i', 30).get_obj(), dtype='i')
 
         # create factory with common arguments for making an observation dimension
         observation_factory = Create2ObservationFactory(main_op=self._main_op,
@@ -97,12 +98,12 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         # the definition of the observed state and the associated custom modification (if any)
         # before passing to the learning algorithm
         self._observation_def = [
-            observation_factory.make_dim('light bump left signal'),
-            observation_factory.make_dim('light bump front left signal'),
-            observation_factory.make_dim('light bump center left signal'),
-            observation_factory.make_dim('light bump center right signal'),
-            observation_factory.make_dim('light bump front right signal'),
-            observation_factory.make_dim('light bump right signal'),
+            # observation_factory.make_dim('light bump left signal'),
+            # observation_factory.make_dim('light bump front left signal'),
+            # observation_factory.make_dim('light bump center left signal'),
+            # observation_factory.make_dim('light bump center right signal'),
+            # observation_factory.make_dim('light bump front right signal'),
+            # observation_factory.make_dim('light bump right signal'),
             observation_factory.make_dim('previous action')
         ]
 
@@ -129,8 +130,13 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         high=np.concatenate([d.highs for d in self._observation_def])
 
         if self._ob_type == OB_TYPE_2 or self._ob_type == OB_TYPE_3:
-            low = np.concatenate([low, [0.0, 0.0, 0.0, 0.0]])
-            high = np.concatenate([high, [1.0, 1.0, 1.0, 1.0]])
+            low = np.concatenate([low, [0.0, 0.0]])
+            high = np.concatenate([high, [1.0, 1.0]])
+
+        if self._ob_type == OB_TYPE_1 or self._ob_type == OB_TYPE_3:
+            self._num_img_channels = 4
+        else:
+            self._num_img_channels = 3
 
         self._observation_space = Box(
             low=low,
@@ -161,12 +167,12 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                 )
 
         if image_shape != (0, 0, 0):
-            image_stack = int(image_shape[-1] // 4)
+            image_stack = int(image_shape[-1] // self._num_img_channels)
             communicator_setups['Camera'] = {'Communicator': CameraCommunicator,
                                              'num_sensor_packets': image_stack,
                                              'kwargs': 
                                                     {'device_id': camera_id,
-                                                     'res': (image_shape[1], image_shape[0]) # communicator uses w, h
+                                                     'res': (image_shape[1], image_shape[0], self._num_img_channels) # communicator uses w, h
                                                     }
                                             }
 
@@ -184,7 +190,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                 )
         
             self._image_buffer = deque([], maxlen=image_stack)
-            self._blank_img = np.zeros((image_shape[0],image_shape[1],4))
+            self._blank_img = np.zeros((image_shape[0],image_shape[1],self._num_img_channels))
 
         self._image_shape = image_shape
         self._image_space = Box(low=0, high=255, shape=self._image_shape)
@@ -235,10 +241,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
                 print('Warning: image time and proprioception time is different by: {}s.'.format(delay))
                 #print
             # unflatten image
-            stacks = int(self._image_shape[-1]//4)
+            stacks = int(self._image_shape[-1]//self._num_img_channels)
             height = self._image_shape[0]
             width = self._image_shape[1]
-            image = image.reshape((stacks, height, width, 4))
+            image = image.reshape((stacks, height, width, self._num_img_channels))
             # image = np.transpose(image.reshape((stacks, height, width, 3)), (0, 3, 1, 2)) # s, c, h, w
             image = np.concatenate(image, axis=-1) # change to self._image_shape
 
@@ -267,17 +273,12 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         return (image, roomba_obs), reward,  done, {'battery_charge': battery_charge}
 
     def _compute_image_obs_(self, sensor_window, timestamp_window, index_window):
-        # return np.concatenate((actual_sensation, [reward], [done]))
         reward, done = self._calc_image_reward(sensor_window)
 
-        # flatten_image = np.concatenate(sensor_window, axis=-1)
-
         if len(self._image_buffer) < self._image_buffer.maxlen:
-            # print('Here', len(self._image_buffer), self._image_buffer.maxlen)
             for _ in range(self._image_buffer.maxlen - len(self._image_buffer)):
                 self._image_buffer.append(self._blank_img)
         flattened = np.concatenate(self._image_buffer, axis=-1).flatten()
-        # print('Here 2', len(self._image_buffer), flattened.shape)
         return np.concatenate((flattened, [done])).astype('uint8'), reward
 
     def _compute_roomba_obs_(self, sensor_window, timestamp_window, index_window):
@@ -326,7 +327,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         self._actuation_packet_['Create2'] = np.concatenate(
             ([create2_config.OPCODE_NAME_TO_CODE[self._main_op]], action))
-        np.copyto(self._prev_action_, action)
+        
+        self._prev_action_buffer.append(action)
+        prev_actions = np.concatenate(self._prev_action_buffer, axis=-1).flatten()
+        np.copyto(self._prev_action_, prev_actions)
 
     def _reset_(self):
         """The required _reset_ interface.
@@ -346,7 +350,12 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         time.sleep(self.pause_before_reset)
 
         self._episode_step_.value = -1
-        np.copyto(self._prev_action_, np.array([0, 0]))
+        for i in range(15):
+            self._prev_action_buffer.append(np.array([0, 0]))
+        
+        prev_actions = np.concatenate(self._prev_action_buffer, axis=-1).flatten()
+        np.copyto(self._prev_action_, prev_actions)
+
         for d in self._observation_def:
             d.reset()
 
@@ -383,7 +392,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         # rotate and drive backward 
         logging.info("Moving Create2 into position.")
-        target_values = [300, 300]
+        target_values = [400, 400]
         # target_values = [-300, -300]
         move_time_1 = np.random.uniform(low=1, high=1.5)
         move_time_2 = np.random.uniform(low=0.3, high=0.7)
@@ -392,7 +401,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         direction = np.random.choice((1, -1))
         
         # rotate
-        self._write_opcode('drive_direct', *(300*direction, -300*direction))
+        self._write_opcode('drive_direct', *(400*direction, -400*direction))
         time.sleep(rotate_time_1)
         self._write_opcode('drive', 0, 0)
         time.sleep(0.1)
@@ -405,13 +414,13 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
 
         # rotate
         direction = np.random.choice((1, -1))
-        self._write_opcode('drive_direct', *(300*direction, -300*direction))
+        self._write_opcode('drive_direct', *(400*direction, -400*direction))
         time.sleep(rotate_time_2)
         self._write_opcode('drive', 0, 0)
         time.sleep(0.1)
         
         # back
-        self._write_opcode('drive_direct', *[-300, -300])
+        self._write_opcode('drive_direct', *[-400, -400])
         # self._write_opcode('drive_direct', *[300, 300])
         time.sleep(move_time_2)
         self._write_opcode('drive', 0, 0)
@@ -518,7 +527,7 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
         reward = 0.0
         done = 0
         image = sensor_window[-1]
-        image = image.reshape(self._image_shape[0], self._image_shape[1], 4)
+        image = image.reshape(self._image_shape[0], self._image_shape[1], self._num_img_channels)
         image = image[:, :, 0:3]
 
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -552,7 +561,10 @@ class Create2VisualReacherEnv(RTRLBaseEnv, gym.Env):
             reward = (2.0/(1+np.exp(-target_size*10.0))) - 1.0 
             reward -= 1
 
-        self._image_buffer.append(np.concatenate((image, np.expand_dims(mask, axis=-1)), axis=2))
+        if self._ob_type == OB_TYPE_1 or self._ob_type == OB_TYPE_3:
+            self._image_buffer.append(np.concatenate((image, np.expand_dims(mask, axis=-1)), axis=2))
+        else:
+            self._image_buffer.append(image)
 
         return reward, done
 

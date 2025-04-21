@@ -16,7 +16,7 @@ class CameraCommunicator(Communicator):
     Camera Communicator for interfacing with most common webcams supported by OpenCV.
     """
 
-    def __init__(self, res=(0, 0), device_id=0):
+    def __init__(self, res=(0, 0, 0), device_id=0):
         """Inits the camera communicator with desired resolution and device_id.
 
         Args:
@@ -56,11 +56,14 @@ class CameraCommunicator(Communicator):
 
         self._res = res
         self._cap = None
-        w, h = res
+        w, h, c = res
 
-        self.zero_channel = np.zeros((h, w, 1), dtype=np.uint8)
+        self.append_zero = False
+        if c == 4:
+            self.zero_channel = np.zeros((h, w, 1), dtype=np.uint8)
+            self.append_zero = True
 
-        sensor_args = {'array_len': int(4*np.product(self._res)),
+        sensor_args = {'array_len': int(np.product(self._res)),
                        'array_type': 'B',
                        'np_array_type': 'B',
                        }
@@ -99,8 +102,9 @@ class CameraCommunicator(Communicator):
         # reading the original frame in (height, width, depth) dimension
         retval, frame = self._cap.read()
         if retval:
-            frame = cv.resize(frame, self._res)
-            frame = np.concatenate([frame, self.zero_channel], axis=-1)
+            frame = cv.resize(frame, self._res[0:2])
+            if self.append_zero:
+                frame = np.concatenate([frame, self.zero_channel], axis=-1)
 
             # flatten and write to buffer
             self.sensor_buffer.write(frame.flatten())
