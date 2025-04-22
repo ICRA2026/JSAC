@@ -43,7 +43,7 @@ if __name__ == "__main__":
     all_images = []
     for actor_path, env_name in zip(best_actor_paths, img_env_names):
         images = []
-        env = DMCVisualEnv(env_name, MODE.IMG, 0, 3, 96 * 4, 96 * 4, 1, 2)
+        env = DMCVisualEnv(env_name, MODE.IMG, 0, 3, 96 * 2, 96 * 2, 1, 2)
         env = WrappedEnv(env)
 
         image_shape = (96, 96, 9)
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         with open(actor_path, 'rb') as f: 
             params = flax.serialization.from_bytes(params, f.read())
 
-        episodes = 1200 // frames[idx]
+        episodes = 600 // frames[idx]
         for j in range(episodes):
             print(env_name, j)
             state = env.reset()
@@ -76,7 +76,7 @@ if __name__ == "__main__":
                 img = state[:, :, 0:3]
                 images.append(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
-                state = cv2.resize(state, (0, 0), fx = 0.25, fy = 0.25)
+                state = cv2.resize(state, (0, 0), fx = 0.5, fy = 0.5)
                 rng, action = sample_actions(rng, 
                                             actor.apply, 
                                             params, 
