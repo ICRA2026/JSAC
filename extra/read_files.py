@@ -15,6 +15,21 @@ def read_log_file(path):
             returns.append(float(rw))
     return epi_steps, returns
 
+def read_tlog_file(path):
+    with open(path, 'r') as fl:
+        epi_steps=[]
+        returns=[]
+        while True:
+            line = fl.readline()
+            if not line:
+                break
+            dc = eval(line)
+            rw = dc['return']
+            stp = dc['episode_steps']
+            epi_steps.append(int(stp))
+            returns.append(float(rw))
+    return epi_steps, returns
+
 def read_csv_file(path):
     total_steps = []
     mean_returns = []
