@@ -55,7 +55,8 @@ def parse_args():
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--sync_mode', default=True, action='store_true')
     parser.add_argument('--global_norm', default=1.0, type=float)
-    parser.add_argument('--layer_norm', default=True, action='store_true')
+    parser.add_argument('--layer_norm', default=False, action='store_true')
+    parser.add_argument('--apply_weight_clip', default=False, action='store_true')
     
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 

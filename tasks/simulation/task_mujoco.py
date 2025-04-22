@@ -64,6 +64,9 @@ def parse_args():
     parser.add_argument('--layer_norm', default=False, action='store_true')
     ## If set to True, nn.LayerNorm is applied after each hidden layer
     
+    parser.add_argument('--apply_weight_clip', default=False, action='store_true')
+    ## Applies weight clipping to network weights based on this paper: https://arxiv.org/abs/2407.01704
+    
     # critic
     parser.add_argument('--critic_lr', default=3e-4, type=float) 
     parser.add_argument('--num_critic_networks', default=5, type=int)
