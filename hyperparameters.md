@@ -4,10 +4,10 @@
 
 | Network Name | Trainable Parameters |
 |----------|----------|
-| Critic | 5,329,925 |
-| Actor | 1,068,038 |
-| Temperature | 1 |
-| **Total** | **6,397,964** |
+| Critic | `5,329,925` |
+| Actor | `1,068,038` |
+| Temperature | `1` |
+| **Total** | `**6,397,964**` |
 
 ### Hyperparameters:
 | Name                      | Default Value   | Description                                                                                                                               |
@@ -40,11 +40,11 @@
 
 | Network Name | Trainable Parameters |
 |----------|----------|
-| Encoder | 88,288 |
-| Critic | 6,800,581 |
-| Actor | 2,312,396 |
-| Temperature | 1 |
-| **Total** | **9,201,266** |
+| Encoder | `88,288` |
+| Critic | `6,800,581` |
+| Actor | `2,312,396` |
+| Temperature | `1` |
+| **Total** | `**9,201,266**` |
 
 ### Hyperparameters:
 | Name                      | Default Value   | Description                                                                                                                               |
@@ -81,11 +81,11 @@
 
 | Network Name | Trainable Parameters |
 |----------|----------|
-| Encoder | 87,744 |
-| Critic | 6,140,101 |
-| Actor | 1,575,118 |
-| Temperature | 1 |
-| **Total** | **7,802,964** |
+| Encoder | `87,744` |
+| Critic | `6,140,101` |
+| Actor | `1,575,118` |
+| Temperature | `1` |
+| **Total** | `**7,802,964**` |
 
 ### Hyperparameters:
 | Name                      | Default Value   | Description                                                                                                                               |
