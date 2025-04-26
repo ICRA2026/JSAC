@@ -10,6 +10,12 @@ tfd = tfp.distributions
 tfb = tfp.bijectors
 
 
+
+## JSAC JAX/Flax implementations are influenced by
+## https://github.com/ikostrikov/jaxrl
+
+
+
 def default_init(scale=jnp.sqrt(2), dtype=jnp.float32):
     return nn.initializers.orthogonal(scale, dtype=dtype)
 

@@ -7,6 +7,13 @@ from jsac.algo.replay_buffer import Batch
 
 CLIP_CONST = 2.0 * np.sqrt(2) ## KP = 2.0, s_l = sqrt(2)
 
+
+
+## JSAC JAX/Flax implementations are influenced by
+## https://github.com/ikostrikov/jaxrl
+
+
+
 def critic_update(rng, 
                   actor, 
                   critic, 
