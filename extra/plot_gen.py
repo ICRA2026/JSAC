@@ -200,7 +200,7 @@ def plot_prop():
     prop_env_names = ['Ant-v5', 'HalfCheetah-v5', 'Hopper-v5', 'Humanoid-v5', 'Walker2d-v5']
     
     jsac_base_path = 'results_jsac_no_ln/prop'
-    jsac_with_ln_base_path = 'results_jsac_ln/prop' 
+    # jsac_with_ln_base_path = 'results_jsac_ln/prop' 
     sb3_results_base_path = 'results_sb3' 
     redq_results_base_path = 'results_redq'
     
@@ -213,18 +213,19 @@ def plot_prop():
         title = env_name 
         jsac_env_res_folder = env_name + '_prop_sync'
         jsac_path = os.path.join(jsac_base_path, jsac_env_res_folder)
-        jsac_with_ln_path = os.path.join(jsac_with_ln_base_path, jsac_env_res_folder)
+        # jsac_with_ln_path = os.path.join(jsac_with_ln_base_path, jsac_env_res_folder)
         sb3_path = os.path.join(sb3_results_base_path, env_name)
         redq_path = os.path.join(redq_results_base_path, env_name)
 
-        paths = [jsac_path, jsac_with_ln_path, sb3_path, redq_path]
+        # paths = [jsac_path, jsac_with_ln_path, sb3_path, redq_path]
+        paths = [jsac_path, sb3_path, redq_path]
         output_path = f'all_plots/prop/{env_name}.png'
 
         avg_graph(
             file_paths=paths,
             colors=sns.color_palette('bright'), 
-            labels=['jsac', 'jsac_with_ln', 'sb3', 'redq'], 
-            file_types=['log', 'log', 'csv', 'log'], 
+            labels=['jsac', 'sb3', 'redq'], 
+            file_types=['log', 'csv', 'log'], 
             seeds=range(15), 
             ylim=None, 
             title=title + ' - Eval', 
@@ -243,7 +244,7 @@ def plot_imgs():
     img_env_titles = ['walker_walk', 'ball_in_cup_catch', 'cartpole_swingup', 'cheetah_run', 'finger_spin', 'hopper_hop']
 
     jsac_base_path = 'results_jsac_no_ln/img'
-    jsac_with_ln_base_path = 'results_jsac_ln/img'  
+    # jsac_with_ln_base_path = 'results_jsac_ln/img'  
       
     dreamer_csvs = ['results_tdmpc2/dreamerv3/walker-walk.csv',
                     '', 
@@ -267,9 +268,9 @@ def plot_imgs():
         title = img_env_titles[idx] 
         jsac_env_res_folder  = env_name + '_img_sync' 
         jsac_path = os.path.join(jsac_base_path, jsac_env_res_folder)
-        jsac_with_ln_path = os.path.join(jsac_with_ln_base_path, jsac_env_res_folder)
+        # jsac_with_ln_path = os.path.join(jsac_with_ln_base_path, jsac_env_res_folder)
 
-        paths = [jsac_path, jsac_with_ln_path]
+        paths = [jsac_path] #, jsac_with_ln_path]
         output_path = f'all_plots/img/{env_name}.png'
         if env_name == 'walker_walk':
             output_path = f'all_plots/img/a_{env_name}.png'
@@ -281,8 +282,8 @@ def plot_imgs():
         avg_graph(
             file_paths=paths,
             colors=sns.color_palette('bright'), 
-            labels=['jsac', 'jsac_with_ln', 'dreamer-v3', 'tdmpc2'], 
-            file_types=['log', 'log'], 
+            labels=['jsac', 'dreamer-v3', 'tdmpc2'], 
+            file_types=['log'], 
             seeds=range(15), 
             ylim=None, 
             title=title + ' - eval', 
