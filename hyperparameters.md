@@ -7,7 +7,7 @@
 | Critic | `5,329,925` |
 | Actor | `1,068,038` |
 | Temperature | `1` |
-| **Total** | `**6,397,964**` |
+| **Total** | **`6,397,964`** |
 
 ### Hyperparameters:
 | Name                      | Default Value   | Description                                                                                                                               |
@@ -44,7 +44,7 @@
 | Critic | `6,800,581` |
 | Actor | `2,312,396` |
 | Temperature | `1` |
-| **Total** | `**9,201,266**` |
+| **Total** | **`9,201,266`** |
 
 ### Hyperparameters:
 | Name                      | Default Value   | Description                                                                                                                               |
@@ -85,7 +85,7 @@
 | Critic | `6,140,101` |
 | Actor | `1,575,118` |
 | Temperature | `1` |
-| **Total** | `**7,802,964**` |
+| **Total** | **`7,802,964`** |
 
 ### Hyperparameters:
 | Name                      | Default Value   | Description                                                                                                                               |
