@@ -163,4 +163,16 @@ Run a [task](https://github.com/fahimfss/JSAC/tree/master/tasks/simulation) file
 - The JAX/Flax implementations were influenced by [jaxrl](https://github.com/ikostrikov/jaxrl).
 - The Create2 environment is based on the implementation in [SenseAct](https://github.com/kindredresearch/SenseAct/tree/master/senseact/envs/create2). 
 
-
+## Cite JSAC
+```
+@software{fahim_shahriar_jsac,
+  author       = {Fahim Shahriar},
+  title        = {fahimfss/JSAC: v1.0.0},
+  month        = apr,
+  year         = 2025,
+  publisher    = {Zenodo},
+  version      = {v1.0.0},
+  doi          = {10.5281/zenodo.15285797},
+  url          = {https://doi.org/10.5281/zenodo.15285797},
+}
+```
